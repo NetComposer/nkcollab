@@ -1,0 +1,44 @@
+-pa deps/eper/ebin
+-pa deps/goldrush/ebin 
+-pa deps/lager/ebin 
+-pa deps/nkpacket/ebin
+-pa deps/nklib/ebin
+-pa deps/cowboy/ebin
+-pa deps/cowlib/ebin
+-pa deps/ranch/ebin
+-pa deps/gun/ebin
+-pa deps/jsx/ebin
+-pa deps/nkdocker/ebin
+-pa deps/nksip/ebin
+-pa deps/nksip/plugins/ebin
+-pa deps/nkservice/ebin
+-pa deps/nkmedia/ebin
+-pa deps/meck/ebin
+-pa deps/mustache/ebin
+-pa deps/enm/ebin
+-pa ../nkcollab/ebin
+
+
+## Name of the node
+-name nkcollab@127.0.0.1
+-setcookie nkcollab
+
+## More processes
++P 1000000
+
+## Treat error_logger warnings as warnings
++W w
+
+## Increase number of concurrent ports/sockets
+-env ERL_MAX_PORTS 65535
+
+## Tweak GC to run more often 
+#-env ERL_FULLSWEEP_AFTER 0
+
+## Set the location of crash dumps
+-env ERL_CRASH_DUMP .
+
+# Start apps
+# -s nkrest_app
+
+

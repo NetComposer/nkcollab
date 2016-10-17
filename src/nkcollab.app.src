@@ -1,0 +1,9 @@
+{application, nkcollab, [
+    {description, "NkCOLLAB Framework"},
+    {vsn, "develop"},
+    {modules, []},
+    {registered, []},
+    {mod, {nkcollab_app, []}},
+    {applications, [nkmedia]},
+    {env, []}
+]}.
