@@ -299,7 +299,7 @@ nkcollab_call_resolve(_Callee, _Type, _Acc, _Call) ->
 
 %% @private
 %% When a call is sento to {nkmedia_janus, pid()}
-%% See nkcollab_call_invite in nkmedia_verto_callbacks for explanation
+%% See nkcollab_call_invite in nkcollab_verto_callbacks for explanation
 
 
 %% We register with janus as {nkmedia_janus_call, CallId, PId},

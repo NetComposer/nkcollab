@@ -32,21 +32,7 @@
     {ok, pid()}.
 
 start_link() ->
-    Childs = case nkcollab_app:get(no_docker) of
-        false ->
-            [
-                % {
-                %     docker,
-                %     {nkcollab_docker, start_link, []},
-                %     permanent,
-                %     5000,
-                %     worker,
-                %     [nkcollab_docker]
-                % }
-            ];
-        true ->
-            []
-    end,
+    Childs = [],
     supervisor:start_link({local, ?MODULE}, ?MODULE, {{one_for_one, 10, 60}, Childs}).
 
 

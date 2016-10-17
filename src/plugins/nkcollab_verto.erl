@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Plugin implementing a Verto server
--module(nkmedia_verto).
+-module(nkcollab_verto).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([invite/4, answer/3, answer_async/3, hangup/2, hangup/3]).
@@ -68,14 +68,14 @@
 
 
 %% @doc Sends an INVITE. 
-%% Listen to callbacks nkmedia_verto_answer/3 and nkmedia_verto_bye/2
+%% Listen to callbacks nkcollab_verto_answer/3 and nkcollab_verto_bye/2
 -spec invite(pid(), call_id(), nkmedia:offer(), nklib:link()) ->
     {ok, nklib:link()} | {error, nkservice:error()}.
     
 invite(Pid, CallId, Offer, Link) ->
     case do_call(Pid, {invite, CallId, Offer, Link}) of
         ok ->
-            {ok, {nkmedia_verto, CallId, Pid}};
+            {ok, {nkcollab_verto, CallId, Pid}};
         {error, Error} ->
             {error, Error}
     end.
@@ -175,7 +175,7 @@ default_port(wss) -> 8082.
     {ok, #state{}}.
 
 conn_init(NkPort) ->
-    {ok, {nkmedia_verto, SrvId}, _} = nkpacket:get_user(NkPort),
+    {ok, {nkcollab_verto, SrvId}, _} = nkpacket:get_user(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
     Verto = #{remote=>Remote, srv_id=>SrvId},
     State1 = #state{
@@ -186,7 +186,7 @@ conn_init(NkPort) ->
     },
     nklib_proc:put(?MODULE, <<>>),
     lager:info("NkMEDIA Verto new connection (~s, ~p)", [Remote, self()]),
-    {ok, State2} = handle(nkmedia_verto_init, [NkPort], State1),
+    {ok, State2} = handle(nkcollab_verto_init, [NkPort], State1),
     {ok, State2}.
 
 
@@ -289,7 +289,7 @@ conn_encode(Msg, _NkPort) when is_binary(Msg) ->
 conn_handle_call(Msg, From, NkPort, State) ->
     case handle_op(Msg, From, NkPort, State) of
         unknown_op ->
-            handle(nkmedia_verto_handle_call, [Msg, From], State);
+            handle(nkcollab_verto_handle_call, [Msg, From], State);
         Other ->
             Other
     end.
@@ -301,7 +301,7 @@ conn_handle_call(Msg, From, NkPort, State) ->
 conn_handle_cast(Msg, NkPort, State) ->
     case handle_op(Msg, undefined, NkPort, State) of
         unknown_op ->
-            handle(nkmedia_verto_handle_cast, [Msg], State);
+            handle(nkcollab_verto_handle_cast, [Msg], State);
         Other ->
             Other
     end.
@@ -316,7 +316,7 @@ conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, _NkPort, State) ->
             ?LLOG(notice, "monitor process down for ~s (~p)", [CallId, Link], State),
             {stop, normal, State2};
         not_found ->
-            handle(nkmedia_verto_handle_info, [Info], State)
+            handle(nkcollab_verto_handle_info, [Info], State)
     end;
 
 conn_handle_info({timeout, _, {op_timeout, OpId}}, _NkPort, State) ->
@@ -330,7 +330,7 @@ conn_handle_info({timeout, _, {op_timeout, OpId}}, _NkPort, State) ->
     end;
 
 conn_handle_info(Info, _NkPort, State) ->
-    handle(nkmedia_verto_handle_info, [Info], State).
+    handle(nkcollab_verto_handle_info, [Info], State).
 
 
 %% @doc Called when the connection stops
@@ -338,7 +338,7 @@ conn_handle_info(Info, _NkPort, State) ->
     ok.
 
 conn_stop(Reason, _NkPort, State) ->
-    catch handle(nkmedia_verto_terminate, [Reason], State).
+    catch handle(nkcollab_verto_terminate, [Reason], State).
 
 
 
@@ -377,7 +377,7 @@ process_client_req(<<"login">>, Msg, NkPort, State) ->
             <<"passwd">> := Passwd,
             <<"sessid">> := VertoSessId
         } ->
-            case handle(nkmedia_verto_login, [Login, Passwd], State) of
+            case handle(nkcollab_verto_login, [Login, Passwd], State) of
                 {true, State2} ->
                     Login2 = Login;
                 {true, Login2, State2} ->
@@ -449,7 +449,7 @@ process_client_req(<<"verto.invite">>, Msg, NkPort, State) ->
         verto_params => Params
     },
     % io:format("SDP INVITE FROM VERTO: ~s\n", [SDP]),
-    State3 = case handle(nkmedia_verto_invite, [SrvId, CallId, Offer], State) of
+    State3 = case handle(nkcollab_verto_invite, [SrvId, CallId, Offer], State) of
         {ok, Link, State2} -> 
             links_add(CallId, Link, State2);
         {answer, Answer, Link, State2} -> 
@@ -485,7 +485,7 @@ process_client_req(<<"verto.answer">>, Msg, NkPort, State) ->
             case links_get(CallId, State) of
                 {ok, Link} ->
                     case 
-                        handle(nkmedia_verto_answer, [CallId, Link, Answer], State2) 
+                        handle(nkcollab_verto_answer, [CallId, Link, Answer], State2) 
                     of
                         {ok, State3} -> 
                             ok;
@@ -514,10 +514,10 @@ process_client_req(<<"verto.bye">>, Msg, NkPort, State) ->
         {ok, Link} ->
             case extract_op({wait_answer, CallId}, State) of
                 not_found ->
-                    handle(nkmedia_verto_bye, [CallId, Link], State);
+                    handle(nkcollab_verto_bye, [CallId, Link], State);
                 {_Op, State2} ->
                     % It was ringing
-                    handle(nkmedia_verto_rejected, [CallId, Link], State2)
+                    handle(nkcollab_verto_rejected, [CallId, Link], State2)
             end;
         not_found ->
             {ok, State}
@@ -537,7 +537,7 @@ process_client_req(<<"verto.info">>, Msg, NkPort, State) ->
     } = Msg,
     {ok, State2} = case links_get(CallId, State) of
         {ok, Link} ->
-            handle(nkmedia_verto_dtmf, [CallId, Link, DTMF], State);
+            handle(nkcollab_verto_dtmf, [CallId, Link, DTMF], State);
         not_found ->
             ?LLOG(warning, "received unexpected dtmf", [], State),
             {ok, State}

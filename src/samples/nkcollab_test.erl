@@ -116,9 +116,6 @@
 
 
 
-
-
-
 -module(nkcollab_test).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -compile([export_all]).
@@ -158,17 +155,7 @@ start() ->
         api_gelf_server => "c2.netc.io",
         log_level => debug
     },
-    % export NKCOLLAB_CERTS="/etc/letsencrypt/live/casa.carlosj.net"
-    Spec2 = case os:getenv("NKCOLLAB_CERTS") of
-        false ->
-            Spec1;
-        Dir ->
-            Spec1#{
-                tls_certfile => filename:join(Dir, "cert.pem"),
-                tls_keyfile => filename:join(Dir, "privkey.pem"),
-                tls_cacertfile => filename:join(Dir, "fullchain.pem")
-            }
-    end,
+    Spec2 = nkmedia_util:add_certs(Spec1),
     nkservice:start(test, Spec2).
 
 
@@ -190,10 +177,10 @@ restart() ->
 
 plugin_deps() ->
     [
-        nkcollab_sip,  nksip_registrar, nksip_trace,
-        nkcollab_verto, nkmedia_fs, nkmedia_fs_verto_proxy,
-        nkcollab_janus, nkmedia_janus_proxy, nkmedia_janus,
-        nkmedia_kms, nkmedia_kms_proxy,
+        nksip_registrar, nksip_trace,
+        nkmedia_janus, nkmedia_fs, nkmedia_kms, 
+        nkmedia_janus_proxy, nkmedia_kms_proxy,
+        nkcollab_verto, nkcollab_janus, nkcollab_sip,
         nkservice_api_gelf
     ].
 
@@ -293,8 +280,8 @@ nkcollab_verto_login(Login, Pass, Verto) ->
 % @private Called when we receive INVITE from Verto
 nkcollab_verto_invite(_SrvId, CallId, Offer, Verto) ->
     #{dest:=Dest} = Offer,
-    Offer2 = nkcollab_util:filter_codec(video, vp8, Offer),
-    Offer3 = nkcollab_util:filter_codec(audio, opus, Offer2),
+    Offer2 = nkmedia_util:filter_codec(video, vp8, Offer),
+    Offer3 = nkmedia_util:filter_codec(audio, opus, Offer2),
     Reg = {nkcollab_verto, CallId, self()},
     case incoming(Dest, Offer3, Reg, #{no_answer_trickle_ice => true}) of
         {ok, _SessId, SessLink} ->

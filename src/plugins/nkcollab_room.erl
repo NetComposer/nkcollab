@@ -148,7 +148,7 @@
     {ok, id(), pid()} | {error, term()}.
 
 start(Srv, Config) ->
-    {RoomId, Config2} = nkcollab_util:add_id(room_id, Config, room),
+    {RoomId, Config2} = nkmedia_util:add_id(room_id, Config, room),
     case find(RoomId) of
         {ok, _} ->
             {error, room_already_exists};

@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Plugin implementing a SIP server and client
--module(nkmedia_sip).
+-module(nkcollab_sip).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([send_invite/5, hangup/1, answer/2, cancel/1]).
 -export([register_incoming_link/2]).
@@ -49,12 +49,12 @@
 
 %% @doc
 %% Launches an asynchronous invite, from a session or call
-%% To recognize events, 'Id' must be {nkmedia_session|nkmedia_call, Id}
+%% To recognize events, 'Id' must be {nkmedia_session|nkcollab_call, Id}
 %%
 %% Stores in the current process 
-%% - nkmedia_sip_dialog_to_link
-%% - nkmedia_sip_link_to_dialog
-%% - nkmedia_sip_link_to_handle
+%% - nkcollab_sip_dialog_to_link
+%% - nkcollab_sip_link_to_dialog
+%% - nkcollab_sip_link_to_handle
 %%
 -spec send_invite(nkservice:id(), nklib:user_uri(), nkmedia:offer(),
                   nklib:link(), invite_opts()) ->
@@ -73,12 +73,12 @@ send_invite(Srv, Uri, #{sdp:=SDP}, Link, Opts) ->
                 true -> #{sdp=>nksip_sdp:unparse(Body)};
                 false -> #{}
             end,
-            SrvId:nkmedia_sip_invite_ringing(Link, Answer);
+            SrvId:nkcollab_sip_invite_ringing(Link, Answer);
         ({resp, Code, _Resp, _Call}) when Code < 200 ->
             ok;
         ({resp, Code, _Resp, _Call}) when Code >= 300 ->
             lager:info("SIP reject code: ~p", [Code]),
-            SrvId:nkmedia_sip_invite_rejected(Link);
+            SrvId:nkcollab_sip_invite_rejected(Link);
         ({resp, _Code, Resp, _Call}) ->
             %% We are storing this in the session's process (Self)
             {ok, Body} = nksip_response:body(Resp),
@@ -86,7 +86,7 @@ send_invite(Srv, Uri, #{sdp:=SDP}, Link, Opts) ->
             case nksip_sdp:is_sdp(Body) of
                 true ->
                     Answer = #{sdp=>nksip_sdp:unparse(Body)},
-                    case SrvId:nkmedia_sip_invite_answered(Link, Answer) of
+                    case SrvId:nkcollab_sip_invite_answered(Link, Answer) of
                         ok ->
                             ok;
                         Other ->
@@ -96,7 +96,7 @@ send_invite(Srv, Uri, #{sdp:=SDP}, Link, Opts) ->
                 false ->
                     lager:warning("SIP: missing SDP in response"),
                     spawn(fun() -> nksip_uac:bye(Dialog, []) end),
-                    SrvId:nkmedia_sip_invite_rejected(Link)
+                    SrvId:nkcollab_sip_invite_rejected(Link)
             end
     end,
     lager:info("SIP calling ~s", [nklib_unparse:uri(Uri)]),
@@ -118,8 +118,8 @@ send_invite(Srv, Uri, #{sdp:=SDP}, Link, Opts) ->
     receive
         {Ref, Pid} ->
             register_outcoming_handle(Handle, Link, Pid),
-            {ok, {nkmedia_sip, Pid}}
-            % {ok, {nkmedia_sip_out, Link, Pid}}
+            {ok, {nkcollab_sip, Pid}}
+            % {ok, {nkcollab_sip_out, Link, Pid}}
     after
         5000 ->
             {error, sip_send_error}
@@ -197,23 +197,23 @@ register_incoming_link(Req, Link) ->
     {ok, Handle} = nksip_request:get_handle(Req),
     {ok, Dialog} = nksip_dialog:get_handle(Req),
     lager:info("Register incoming, SIP: ~p ~p ~p", [Link, Handle, self()]),
-    true = nklib_proc:reg({nkmedia_sip_dialog_to_link, Dialog}, Link),
-    true = nklib_proc:reg({nkmedia_sip_link_to_dialog, Link}, Dialog),
-    true = nklib_proc:reg({nkmedia_sip_handle_to_link, Handle}, Link),
-    true = nklib_proc:reg({nkmedia_sip_link_to_handle, in, Link}, Handle).
+    true = nklib_proc:reg({nkcollab_sip_dialog_to_link, Dialog}, Link),
+    true = nklib_proc:reg({nkcollab_sip_link_to_dialog, Link}, Dialog),
+    true = nklib_proc:reg({nkcollab_sip_handle_to_link, Handle}, Link),
+    true = nklib_proc:reg({nkcollab_sip_link_to_handle, in, Link}, Handle).
 
 
 %% @private
 register_outcoming_handle(Handle, Link, Pid) ->
-    true = nklib_proc:reg({nkmedia_sip_link_to_handle, out, Link}, Handle, Pid).
+    true = nklib_proc:reg({nkcollab_sip_link_to_handle, out, Link}, Handle, Pid).
 
 
 %% @private
 register_outcoming_dialog(Resp, Link) ->
     {ok, Dialog} = nksip_dialog:get_handle(Resp),
-    nklib_proc:del({nkmedia_sip_link_to_handle, out, Link}),
-    true = nklib_proc:reg({nkmedia_sip_dialog_to_link, Dialog}, Link),
-    true = nklib_proc:reg({nkmedia_sip_link_to_dialog, Link}, Dialog),
+    nklib_proc:del({nkcollab_sip_link_to_handle, out, Link}),
+    true = nklib_proc:reg({nkcollab_sip_dialog_to_link, Dialog}, Link),
+    true = nklib_proc:reg({nkcollab_sip_link_to_dialog, Link}, Dialog),
     Dialog.
 
 
@@ -223,7 +223,7 @@ register_outcoming_dialog(Resp, Link) ->
 
 handle_to_link(Req) ->
     {ok, Handle} = nksip_request:get_handle(Req),
-    case nklib_proc:values({nkmedia_sip_handle_to_link, Handle}) of
+    case nklib_proc:values({nkcollab_sip_handle_to_link, Handle}) of
         [{Link, _}] -> 
             {ok, Link};
         [] ->
@@ -237,9 +237,9 @@ handle_to_link(Req) ->
     {ok, binary()} | not_found.
 
 link_to_handle(Link, Type) ->
-    case nklib_proc:values({nkmedia_sip_link_to_handle, Type, Link}) of
+    case nklib_proc:values({nkcollab_sip_link_to_handle, Type, Link}) of
         [{Handle, Pid}] -> 
-            nklib_proc:del({nkmedia_sip_link_to_handle, Type, Link}, Pid),
+            nklib_proc:del({nkcollab_sip_link_to_handle, Type, Link}, Pid),
             {ok, Handle};
         [] ->
             not_found
@@ -252,7 +252,7 @@ link_to_handle(Link, Type) ->
 
 dialog_to_link(Req) ->
     {ok, Dialog} = nksip_dialog:get_handle(Req),
-    case nklib_proc:values({nkmedia_sip_dialog_to_link, Dialog}) of
+    case nklib_proc:values({nkcollab_sip_dialog_to_link, Dialog}) of
         [{Link, _}] -> 
             {ok, Link};
         [] ->
@@ -265,7 +265,7 @@ dialog_to_link(Req) ->
     {ok, binary() | not_found}.
 
 link_to_dialog(Link) ->
-    case nklib_proc:values({nkmedia_sip_link_to_dialog, Link}) of
+    case nklib_proc:values({nkcollab_sip_link_to_dialog, Link}) of
         [{Dialog, _}] -> 
             {ok, Dialog};
         [] ->

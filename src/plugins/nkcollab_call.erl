@@ -134,7 +134,7 @@ start(Srv, Callee, Config) ->
     case nkservice_srv:get_srv_id(Srv) of
         {ok, SrvId} ->
             Config2 = Config#{srv_id=>SrvId, callee=>Callee},
-            {CallId, Config3} = nkcollab_util:add_id(call_id, Config2, call),
+            {CallId, Config3} = nkmedia_util:add_id(call_id, Config2, call),
             {ok, Pid} = gen_server:start(?MODULE, [Config3], []),
             {ok, CallId, Pid};
         not_found ->
