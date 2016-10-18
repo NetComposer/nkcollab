@@ -338,8 +338,10 @@ api_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
 %% @private
 api_server_reg_down({nkcollab_call, _CallId, _Pid}, _Reason, _State) ->
     lager:error("CALL: api server detected call down"),
-    continue.
+    continue;
 
+api_server_reg_down(_Link, _Reason, _State) ->
+    continue.
 
 
 %% ===================================================================

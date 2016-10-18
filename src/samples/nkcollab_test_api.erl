@@ -489,7 +489,7 @@ start_invite(Num, WsPid, Config) ->
             {ok, SessId, SessPid} = start_session(WsPid, Config2),
             {ok, Offer} = cmd(WsPid, SessId, get_offer),
             SessLink = {nkmedia_session, SessId, SessPid},
-            Syntax = nkcollab_api_syntax:offer(),
+            Syntax = nkmedia_api_syntax:offer(),
             {ok, Offer2, _} = nklib_config:parse_config(Offer, Syntax, #{return=>map}),
             start_invite2(Dest, SessId, Offer2, SessLink)
     end.
@@ -513,6 +513,8 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
     Type = maps:get(<<"type">>, Data, <<"*">>),
     ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
     Body = maps:get(<<"body">>, Data, #{}),
+    lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
+
     Sender = case Body of
         #{
             <<"verto_call_id">> := SCallId,
@@ -532,9 +534,9 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
             #{<<"answer">>:=#{<<"sdp">>:=SDP}} = Body,
             case Sender of
                 {verto, CallId, Pid} ->
-                    nkcollab_verto:answer(Pid, CallId, #{sdp=>SDP});
+                    nkcollab_verto:answer_async(Pid, CallId, #{sdp=>SDP});
                 {janus, CallId, Pid} ->
-                    nkcollab_janus:answer(Pid, CallId, #{sdp=>SDP});
+                    nkcollab_janus:answer_async(Pid, CallId, #{sdp=>SDP});
                 unknown ->
                     lager:notice("TEST CLIENT ANSWER")
             end;

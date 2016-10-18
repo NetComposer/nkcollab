@@ -413,7 +413,7 @@ incoming(<<"m2">>, Offer, Reg, Opts) ->
     start_session(mcu, Config#{room_id=>"m2"});
 
 incoming(<<"jp1">>, Offer, Reg, Opts) ->
-    nkcollab_room:start(test, #{room_id=>sfu, backend=>nkmedia_janus}),
+    nkmedia_room:start(test, #{room_id=>sfu, backend=>nkmedia_janus}),
     Config = incoming_config(nkmedia_janus, Offer, Reg, Opts),
     start_session(publish, Config#{room_id=>sfu});
 
@@ -427,7 +427,7 @@ incoming(<<"jp2">>, Offer, Reg, Opts) ->
     start_session(publish, Config2);
 
 incoming(<<"kp1">>, Offer, Reg, Opts) ->
-    nkcollab_room:start(test, #{room_id=>sfu, backend=>nkmedia_kms}),
+    nkmedia_room:start(test, #{room_id=>sfu, backend=>nkmedia_kms}),
     Config = incoming_config(nkmedia_kms, Offer, Reg, Opts),
     start_session(publish, Config#{room_id=>sfu});
 
@@ -601,9 +601,9 @@ find_user(User) ->
 
 
 get_publisher(RoomId, Pos) ->
-    case nkcollab_room:get_room(RoomId) of
+    case nkmedia_room:get_room(RoomId) of
         {ok, #{backend:=Backend}=Room} ->
-            Pubs = nkcollab_room:get_all_with_role(publisher, Room),
+            Pubs = nkmedia_room:get_all_with_role(publisher, Room),
             {ok, lists:nth(Pos, Pubs), Backend};
         {error, Error} ->
             {error, Error}

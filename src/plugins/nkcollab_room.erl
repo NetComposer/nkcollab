@@ -370,7 +370,7 @@ media_room_event(RoomId, Event) ->
     {ok, tuple()}.
 
 init([#{srv_id:=SrvId, room_id:=RoomId, room_pid:=RoomPid}=Room]) ->
-    yes = nklib_proc:reg({?MODULE, RoomId}),
+    true = nklib_proc:reg({?MODULE, RoomId}),
     Backend = maps:get(backend, Room, undefined),
     nklib_proc:put(?MODULE, {RoomId, Backend}),
     State1 = #state{
