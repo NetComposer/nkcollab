@@ -58,9 +58,9 @@ cmd(<<"create">>, Req, State) ->
     case maps:get(subscribe, Data, true) of
         true ->
             % In case of no_destination, the call will wait 100msecs before stop
-            RegId = call_reg_id(SrvId, <<"*">>, CallId),
             Body = maps:get(events_body, Data, #{}),
-            nkservice_api_server:register_events(self(), RegId, Body);
+            Event = get_call_event(SrvId, <<"*">>, CallId, Body),
+            nkservice_api_server:register_events(self(), Event);
         false ->
             ok
     end,
@@ -218,9 +218,9 @@ invite(CallId, {Type, Pid}, SessId, Offer, Caller, #{srv_id:=SrvId}=Call) ->
             nkservice_api_server:register(Pid, {nkcollab_call, CallId, self()}), 
             case maps:get(subscribe, Res, true) of
                 true ->
-                    RegId = call_reg_id(SrvId, <<"*">>, CallId),
                     Body = maps:get(events_body, Res, #{}),
-                    nkservice_api_server:register_events(Pid, RegId, Body);
+                    Event = get_call_event(SrvId, <<"*">>, CallId, Body),
+                    nkservice_api_server:register_events(Pid, Event, Body);
                 false -> 
                     ok
             end,
@@ -251,8 +251,8 @@ candidate(CallId, Pid, Candidate, Call) ->
 %% The event will be captured as standard, no need to send it here
 call_event(CallId, ApiPid, {hangup, _Reason}, #{srv_id:=SrvId}=Call) ->
     nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
-    RegId = call_reg_id(SrvId, <<"*">>, CallId),
-    nkservice_api_server:unregister_events(ApiPid, RegId),
+    Event = get_call_event(SrvId, <<"*">>, CallId, undefined),
+    nkservice_api_server:unregister_events(ApiPid, Event),
     {ok, Call};
 
 call_event(_CallId, _Pid, _Event, Call) ->
@@ -265,13 +265,14 @@ call_event(_CallId, _Pid, _Event, Call) ->
 
 
 %% @private
-call_reg_id(SrvId, Type, CallId) ->
-    #reg_id{
+get_call_event(SrvId, Type, CallId, Body) ->
+    #event{
         srv_id = SrvId,     
         class = <<"media">>, 
         subclass = <<"call">>,
         type = nklib_util:to_binary(Type),
-        obj_id = CallId
+        obj_id = CallId,
+        body = Body
     }.
 
 

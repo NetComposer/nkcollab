@@ -51,7 +51,7 @@ event(_SessId, _Event, Session) ->
     ok.
 
 send_event(SrvId, Class, Id, Type, Body) ->
-    send_event(SrvId, Class, Id, Type, Body, all).
+    send_event(SrvId, Class, Id, Type, Body, undefined).
 
 
 %% @doc Sends an event
@@ -60,11 +60,13 @@ send_event(SrvId, Class, Id, Type, Body) ->
 
 send_event(SrvId, Class, Id, Type, Body, Pid) ->
     lager:notice("COLLAB EVENT (~s:~s:~s): ~p", [Class, Type, Id, Body]),
-    RegId = #reg_id{
+    Event = #event{
         srv_id = SrvId,     
-        class = <<"media">>, 
+        class = <<"collab">>, 
         subclass = nklib_util:to_binary(Class),
         type = nklib_util:to_binary(Type),
-        obj_id = Id
+        obj_id = Id,
+        body = Body,
+        pid = Pid
     },
-    nkservice_events:send(RegId, Body, Pid).
+    nkservice_events:send(Event).

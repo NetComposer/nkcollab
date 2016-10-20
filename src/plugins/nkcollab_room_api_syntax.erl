@@ -22,7 +22,7 @@
 -module(nkcollab_room_api_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([syntax/4]).
+-export([syntax/4, get_room_info/1, get_member_info/1]).
 
 % -include_lib("nkservice/include/nkservice.hrl").
 
@@ -61,6 +61,13 @@ syntax(<<"get_list">>, Syntax, Defaults, Mandatory) ->
     };
 
 syntax(<<"get_info">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{room_id => binary},
+        Defaults, 
+        [room_id|Mandatory]
+    };
+
+syntax(<<"get_presenters">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{room_id => binary},
         Defaults, 
@@ -176,6 +183,21 @@ syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory) ->
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.
 
+
+
+%% ===================================================================
+%% Keys
+%% ===================================================================
+
+
+get_room_info(Room) ->
+    Keys = [audio_codec, video_codec, bitrate, class, backend, meta],
+    maps:with(Keys, Room).
+
+
+get_member_info(Room) ->
+    Keys = [user_id, role, meta],
+    maps:with(Keys, Room).
 
 
 %% ===================================================================

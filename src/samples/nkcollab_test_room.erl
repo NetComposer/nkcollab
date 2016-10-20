@@ -131,6 +131,9 @@ destroy(Pid, Id) ->
 info(Pid, Id) ->
     cmd(Pid, get_info, #{room_id=>Id}).
 
+presenters(Pid, Id) ->
+    cmd(Pid, get_presenters, #{room_id=>Id}).
+
 cmd(Pid, Cmd, Data) ->
     nkservice_api_client:cmd(Pid, collab, room, Cmd, Data).
 
@@ -158,14 +161,19 @@ candidate(Pid, SessId, #candidate{a_line=Line, m_id=Id, m_index=Index}) ->
 
 %% Events
 
-subscribe(WsPid, SessId, Body) ->
+subscribe_session(Pid, SessId, Body) ->
     Data = #{class=>media, subclass=>session, obj_id=>SessId, body=>Body},
-    nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
+    nkservice_api_client:cmd(Pid, core, event, subscribe, Data).
 
 
-subscribe_all(WsPid) ->
+subscribe(Pid, SessId, Body) ->
+    Data = #{class=>media, subclass=>session, obj_id=>SessId, body=>Body},
+    nkservice_api_client:cmd(Pid, core, event, subscribe, Data).
+
+
+subscribe_all(Pid) ->
     Data = #{class=>media},
-    nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
+    nkservice_api_client:cmd(Pid, core, event, subscribe, Data).
 
 
 
@@ -188,15 +196,12 @@ subscribe_all(WsPid) ->
 
 
 % %% Msglog
-% msglog_send(C, Room, Msg) ->
-%     nkservice_api_client:cmd(C, media, room, msglog_send, #{room_id=>Room, msg=>Msg}).
+broadcast(Pid, Room, Msg) ->
+    cmd(Pid, send_broadcast, #{room_id=>Room, msg=>Msg}).
 
-% msglog_get(C, Room) ->
-%     nkservice_api_client:cmd(C, media, room, msglog_get, #{room_id=>Room}).
-
-% msglog_subscribe(C, Room) ->
-%     Spec = #{class=>media, subclass=>room, obj_id=>Room},
-%     nkservice_api_client:cmd(C, core, event, subscribe, Spec).
+msglog_subscribe(C, Room) ->
+    Spec = #{class=>media, subclass=>room, obj_id=>Room},
+    nkservice_api_client:cmd(C, core, event, subscribe, Spec).
 
 
 %% Gelf
@@ -394,7 +399,7 @@ incoming(<<"p", RoomId/binary>>, WsPid, Opts) ->
     end,
     Opts2 = Opts#{
         room_id => RoomId,
-        meta => #{ module=>nkcollab_test_room, presenter=>true}
+        meta => #{module=>nkcollab_test_room}
     },
     case cmd(WsPid, create_member, Opts2) of
         {ok, 
@@ -447,7 +452,7 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
     Type = maps:get(<<"type">>, Data, <<"*">>),
     ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
     Body = maps:get(<<"body">>, Data, #{}),
-    lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
+    lager:error("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
 
     Sender = case Body of
         #{
@@ -464,17 +469,17 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
             unknown
     end,
     case {Class, Sub, Type} of
-        {<<"media">>, <<"session">>, <<"answer">>} ->
-            #{<<"answer">>:=#{<<"sdp">>:=SDP}} = Body,
-            case Sender of
-                {verto, CallId, Pid} ->
-                    nkcollab_verto:answer_async(Pid, CallId, #{sdp=>SDP});
-                {janus, CallId, Pid} ->
-                    nkcollab_janus:answer_async(Pid, CallId, #{sdp=>SDP});
-                unknown ->
-                    lager:notice("TEST CLIENT ANSWER")
-            end;
-        {<<"media">>, <<"session">>, <<"destroyed">>} ->
+        % {<<"media">>, <<"session">>, <<"answer">>} ->
+        %     #{<<"answer">>:=#{<<"sdp">>:=SDP}} = Body,
+        %     case Sender of
+        %         {verto, CallId, Pid} ->
+        %             nkcollab_verto:answer_async(Pid, CallId, #{sdp=>SDP});
+        %         {janus, CallId, Pid} ->
+        %             nkcollab_janus:answer_async(Pid, CallId, #{sdp=>SDP});
+        %         unknown ->
+        %             lager:notice("TEST CLIENT ANSWER")
+        %     end;
+        {<<"collab">>, <<"room">>, <<"stopped_session">>} ->
             case Sender of
                 {verto, CallId, Pid} ->
                     nkcollab_verto:hangup(Pid, CallId);
