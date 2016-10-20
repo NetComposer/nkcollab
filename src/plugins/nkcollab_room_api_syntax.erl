@@ -34,15 +34,16 @@
 syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
-            class => atom,
+            class => {enum, [sfu]},
             room_id => binary,
             backend => atom,
-            bitrate => {integer, 0, none},
             audio_codec => {enum, [opus, isac32, isac16, pcmu, pcma]},
-            video_codec => {enum , [vp8, vp9, h264]}
+            video_codec => {enum , [vp8, vp9, h264]},
+            bitrate => {integer, 0, none},
+            meta => map
         },
         Defaults,
-        [class|Mandatory]
+        Mandatory
     };
 
 syntax(<<"destroy">>, Syntax, Defaults, Mandatory) ->
@@ -54,7 +55,7 @@ syntax(<<"destroy">>, Syntax, Defaults, Mandatory) ->
 
 syntax(<<"get_list">>, Syntax, Defaults, Mandatory) ->
     {
-        Syntax#{service => fun nkservice_api:parse_service/1},
+        Syntax,
         Defaults, 
         Mandatory
     };
@@ -66,7 +67,82 @@ syntax(<<"get_info">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(<<"send_msg">>, Syntax, Defaults, Mandatory) ->
+syntax(<<"create_member">>, Syntax, Defaults, Mandatory) ->
+    {
+        session_opts(Syntax#{
+            room_id => binary,
+            role => {enum, [presenter, viewer]},
+            meta => map,
+            events_body => map
+        }),
+        Defaults,
+        [room_id|Mandatory]
+    };
+
+syntax(<<"destroy_member">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            room_id => binary,
+            member_id => integer
+        },
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"update_presenter">>, Syntax, Defaults, Mandatory) ->
+    {
+        session_opts(Syntax#{
+            room_id => binary,
+            member_id => integer
+        }),
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"add_viewer">>, Syntax, Defaults, Mandatory) ->
+    {
+        session_opts(Syntax#{
+            room_id => binary,
+            member_id => integer,
+            presenter_id => integer
+        }),
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"remove_viewer">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            room_id => binary,
+            member_id => integer,
+            presenter_id => integer
+        },
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"update_meta">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            room_id => binary,
+            member_id => integer,
+            meta => map
+        },
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"update_media">>, Syntax, Defaults, Mandatory) ->
+    {
+        media_opts(Syntax#{
+            room_id => binary,
+            session_id => binary
+        }),
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"send_broadcast">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -85,7 +161,42 @@ syntax(<<"get_all_msgs">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
+syntax(<<"set_answer">>, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(<<"set_answer">>, Syntax, Defaults, Mandatory);
+
+syntax(<<"get_answer">>, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(<<"get_answer">>, Syntax, Defaults, Mandatory);
+
+syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory);
+
+syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory);
+
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.
 
 
+
+%% ===================================================================
+%% Internal
+%% ===================================================================
+
+
+session_opts(Data) ->
+    media_opts(Data#{
+        offer => nkmedia_api_syntax:offer(),
+        no_offer_trickle_ice => boolean,
+        no_answer_trickle_ice => boolean,
+        trickle_ice_timeout => integer,
+        sdp_type => {enum, [rtp, webrtc]}
+    }).
+
+
+media_opts(Data) ->
+    Data#{
+        mute_audio => boolean,
+        mute_video => boolean,
+        mute_data => boolean,
+        bitrate => {integer, 0, none}
+    }.

@@ -23,8 +23,9 @@
 -module(nkcollab_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3]).
+-export([event/3, send_event/5]).
 
+-include_lib("nkservice/include/nkservice.hrl").
 
 
 %% ===================================================================
@@ -38,3 +39,32 @@
 
 event(_SessId, _Event, Session) ->
     {ok, Session}.
+
+
+
+%% ===================================================================
+%% Internal
+%% ===================================================================
+
+%% @doc Sends an event
+-spec send_event(nkservice:id(), atom(), binary(), atom(), map()) ->
+    ok.
+
+send_event(SrvId, Class, Id, Type, Body) ->
+    send_event(SrvId, Class, Id, Type, Body, all).
+
+
+%% @doc Sends an event
+-spec send_event(nkservice:id(), atom(), binary(), atom(), map(), pid()) ->
+    ok.
+
+send_event(SrvId, Class, Id, Type, Body, Pid) ->
+    lager:notice("COLLAB EVENT (~s:~s:~s): ~p", [Class, Type, Id, Body]),
+    RegId = #reg_id{
+        srv_id = SrvId,     
+        class = <<"media">>, 
+        subclass = nklib_util:to_binary(Class),
+        type = nklib_util:to_binary(Type),
+        obj_id = Id
+    },
+    nkservice_events:send(RegId, Body, Pid).

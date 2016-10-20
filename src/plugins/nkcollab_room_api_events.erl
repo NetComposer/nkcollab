@@ -22,7 +22,7 @@
 -module(nkcollab_room_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3]).
+-export([event/3, room_down/2]).
 
 % -include_lib("nkservice/include/nkservice.hrl").
 
@@ -37,27 +37,47 @@
     {ok, nkcollab_room:room()}.
 
 event(RoomId, started, Room) ->
-    Data = maps:with([audio_codec, video_codec, bitrate, class, backend], Room),
+    Data = maps:with([audio_codec, video_codec, bitrate, class, backend, meta], Room),
     send_event(RoomId, created, Data, Room);
 
 event(RoomId, {stopped, Reason}, #{srv_id:=SrvId}=Room) ->
     {Code, Txt} = nkservice_util:error_code(SrvId, Reason),
     send_event(RoomId, destroyed, #{code=>Code, reason=>Txt}, Room);
 
-event(RoomId, {started_member, SessId, Info}, Room) ->
-    send_event(RoomId, started_member, Info#{session_id=>SessId}, Room);
+event(RoomId, {started_member, MemberId, Info}, Room) ->
+    send_event(RoomId, started_member, Info#{member_id=>MemberId}, Room);
 
-event(RoomId, {stopped_member, SessId, Info}, Room) ->
-    send_event(RoomId, stopped_member, Info#{session_id=>SessId}, Room);
+event(RoomId, {stopped_member, MemberId, Info}, Room) ->
+    send_event(RoomId, stopped_member, Info#{member_id=>MemberId}, Room);
+
+event(RoomId, {broadcast, Msg}, Room) ->
+    send_event(RoomId, broadcast, Msg, Room);
+
+event(RoomId, {info, Info, Meta}, Room) ->
+    send_event(RoomId, info, Meta#{info=>Info}, Room);
 
 event(_RoomId, _Event, Room) ->
     {ok, Room}.
 
 
 %% @private
+-spec room_down(nkservice:id(), nkmedia_session:id()) ->
+    ok.
+
+room_down(SrvId, RoomId) ->
+    {Code, Txt} = nkservice_util:error_code(SrvId, process_down),
+    Body = #{code=>Code, reason=>Txt},
+    nkcollab_api_events:send_event(SrvId, room, RoomId, destroyed, Body).
+
+
+
+%% ===================================================================
+%% Internal
+%% ===================================================================
+
+%% @private
 send_event(RoomId, Type, Body, #{srv_id:=SrvId}=Room) ->
     nkcollab_api_events:send_event(SrvId, room, RoomId, Type, Body),
     {ok, Room}.
-
 
 

@@ -68,7 +68,7 @@ plugin_stop(Config, #{name:=Name}) ->
 -spec error_code(term()) ->
     {integer(), binary()} | continue.
 
-error_code(media_room_stopped)   -> {401001, "Media Room stopped"};
+error_code(media_room_down)   -> {401001, "Media room failed"};
 error_code(_) -> continue.
 
 
@@ -109,6 +109,9 @@ nkcollab_room_event(RoomId, Event, Room) ->
 %% process to the room
 -spec nkcollab_room_reg_event(room_id(), nklib:link(), nkcollab_room:event(), room()) ->
     {ok, room()} | continue().
+
+nkcollab_room_reg_event(RoomId, {nkmedia_api, Pid}, {stopped, _Reason}, Room) ->
+    nkmedia_room_api:room_stopped(RoomId, Pid, Room);
 
 nkcollab_room_reg_event(_RoomId, _Link, _Event, Room) ->
     {ok, Room}.
@@ -176,10 +179,12 @@ api_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
 %% ===================================================================
 
 %% @private
-api_server_reg_down({nkcollab_room, _RoomId, _Pid}, _Reason, _State) ->
-    lager:error("COLLAB ROOM: api server detected call down"),
-    continue.
+api_server_reg_down({nkcollab_room, RoomId, _Pid}, Reason, State) ->
+    nkcollab_room_api:api_room_down(RoomId, Reason, State),
+    continue;
 
+api_server_reg_down(_Link, _Reason, _State) ->
+    continue.
 
 
 %% ===================================================================

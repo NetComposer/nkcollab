@@ -59,7 +59,7 @@ syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
             no_offer_trickle_ice => boolean,
             no_answer_trickle_ice => boolean,
             trickle_ice_timeout => {integer, 1, none},
-            offer => nkcollab_api_syntax:offer(),
+            offer => nkmedia_api_syntax:offer(),
             sdp_type => {enum, [webrtc, rtp]},
             events_body => any
         },
@@ -83,7 +83,7 @@ syntax(<<"accepted">>, Syntax, Defaults, Mandatory) ->
         Syntax#{
             call_id => binary,
             callee => map,
-            answer => nkcollab_api_syntax:answer(),
+            answer => nkmedia_api_syntax:answer(),
             subscribe => boolean,
             events_body => any
         },
