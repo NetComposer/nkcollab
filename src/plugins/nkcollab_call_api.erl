@@ -60,7 +60,7 @@ cmd(<<"create">>, Req, State) ->
             % In case of no_destination, the call will wait 100msecs before stop
             Body = maps:get(events_body, Data, #{}),
             Event = get_call_event(SrvId, <<"*">>, CallId, Body),
-            nkservice_api_server:register_events(self(), Event);
+            nkservice_api_server:register_event(self(), Event);
         false ->
             ok
     end,
@@ -220,7 +220,7 @@ invite(CallId, {Type, Pid}, SessId, Offer, Caller, #{srv_id:=SrvId}=Call) ->
                 true ->
                     Body = maps:get(events_body, Res, #{}),
                     Event = get_call_event(SrvId, <<"*">>, CallId, Body),
-                    nkservice_api_server:register_events(Pid, Event, Body);
+                    nkservice_api_server:register_event(Pid, Event, Body);
                 false -> 
                     ok
             end,
@@ -252,7 +252,7 @@ candidate(CallId, Pid, Candidate, Call) ->
 call_event(CallId, ApiPid, {hangup, _Reason}, #{srv_id:=SrvId}=Call) ->
     nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
     Event = get_call_event(SrvId, <<"*">>, CallId, undefined),
-    nkservice_api_server:unregister_events(ApiPid, Event),
+    nkservice_api_server:unregister_event(ApiPid, Event),
     {ok, Call};
 
 call_event(_CallId, _Pid, _Event, Call) ->

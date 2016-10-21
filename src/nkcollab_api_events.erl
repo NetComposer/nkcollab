@@ -23,7 +23,7 @@
 -module(nkcollab_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3, send_event/5]).
+-export([event/3, send_event/5, send_event/6]).
 
 -include_lib("nkservice/include/nkservice.hrl").
 

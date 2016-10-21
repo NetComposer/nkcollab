@@ -270,7 +270,7 @@ nkmedia_session_reg_event(_SessId, {nkmedia_janus, CallId, Pid}, Event, Session)
                     % This is our own answer!
                     ok
             end;
-        {stop, Reason} ->
+        {destroyed, Reason} ->
             lager:info("Janus Proto stopping after session stop: ~p", [Reason]),
             nkcollab_janus:hangup(Pid, CallId, Reason);
         _ ->

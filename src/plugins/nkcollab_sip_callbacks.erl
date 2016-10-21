@@ -433,7 +433,7 @@ nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {answer, Answer}, _Session)
     end,
     continue;
 
-nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {stop, _Reason}, _Session) ->
+nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {destroyed, _Reason}, _Session) ->
     Self = self(),
     % We should not block the session
     spawn(fun() -> nkcollab_sip:hangup({nkmedia_session, SessId, Self}) end),

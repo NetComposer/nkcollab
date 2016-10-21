@@ -462,7 +462,7 @@ handle_cast({session_event, SessId, {answer, Answer}}, State) ->
             {noreply, State}
     end;
 
-handle_cast({session_event, SessId, {stop, _Reason}}, State) ->
+handle_cast({session_event, SessId, {destroyed, _Reason}}, State) ->
     case State of
         #state{caller_session_id=SessId} ->
             do_hangup(caller_stopped, State);

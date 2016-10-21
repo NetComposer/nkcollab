@@ -195,7 +195,12 @@ subscribe_all(WsPid) ->
 %% Invite
 invite(Dest, Type, Opts) ->
     WsPid = get_client(),
-    start_invite(Dest, WsPid, Opts#{type=>Type}).
+    case nkservice_api_client:get_user_pids(Dest) of
+        [Pid|_] ->
+            start_invite(Dest, Pid, Opts#{type=>Type});
+        [] ->
+            {error, not_found}
+    end.
 
 invite_listen(Dest, Room) ->
     {ok, PubId, Backend} = nkcollab_test:get_publisher(Room, 1),
@@ -508,12 +513,13 @@ start_invite2({nkmedia_janus, JanusPid}, SessId, Offer, SessLink) ->
 
 %% @private
 api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, UserData) ->
+    #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
     Sub = maps:get(<<"subclass">>, Data, <<"*">>),
     Type = maps:get(<<"type">>, Data, <<"*">>),
     ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
     Body = maps:get(<<"body">>, Data, #{}),
-    lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
+    % lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
 
     Sender = case Body of
         #{
@@ -538,7 +544,7 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
                 {janus, CallId, Pid} ->
                     nkcollab_janus:answer_async(Pid, CallId, #{sdp=>SDP});
                 unknown ->
-                    lager:notice("TEST CLIENT ANSWER")
+                    lager:notice("UNMANAGED TEST CLIENT ANSWER")
             end;
         {<<"media">>, <<"session">>, <<"destroyed">>} ->
             case Sender of
@@ -547,11 +553,11 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
                 {janus, CallId, Pid} ->
                     nkcollab_janus:hangup(Pid, CallId);
                 unknown ->
-                    lager:notice("TEST CLIENT SESSION STOP: ~p", [Data])
+                    lager:notice("UNMANAGED TEST CLIENT SESSION STOP: ~p", [Data])
             end;
         _ ->
-            lager:notice("TEST CLIENT event ~s:~s:~s:~s: ~p", 
-                         [Class, Sub, Type, ObjId, Body])
+            lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
+                         [User, Class, Sub, Type, ObjId, Body])
     end,
     {ok, #{}, UserData};
 

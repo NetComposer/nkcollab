@@ -24,7 +24,8 @@
 
 -export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
 -export([nkcollab_room_init/2, nkcollab_room_terminate/2, 
-         nkcollab_room_event/3, nkcollab_room_reg_event/4, nkcollab_room_reg_down/4,
+         nkcollab_room_event/3, nkcollab_room_reg_event/4, 
+         nkcollab_room_reg_down/4,
          nkcollab_room_handle_call/3, nkcollab_room_handle_cast/2, 
          nkcollab_room_handle_info/2]).
 -export([error_code/1]).
@@ -69,6 +70,8 @@ plugin_stop(Config, #{name:=Name}) ->
     {integer(), binary()} | continue.
 
 error_code(media_room_down)   -> {401001, "Media room failed"};
+error_code(missing_presenter) -> {401002, "Media room failed"};
+
 error_code(_) -> continue.
 
 
@@ -110,11 +113,30 @@ nkcollab_room_event(RoomId, Event, Room) ->
 -spec nkcollab_room_reg_event(room_id(), nklib:link(), nkcollab_room:event(), room()) ->
     {ok, room()} | continue().
 
-nkcollab_room_reg_event(RoomId, {nkmedia_api, Pid}, {stopped, _Reason}, Room) ->
-    nkmedia_room_api:room_stopped(RoomId, Pid, Room);
+nkcollab_room_reg_event(RoomId, {nkmedia_api, Pid}, {stopped_member, MemberId, _Info},
+                        Room) ->
+    nkcollab_room_api:member_stopped(RoomId, MemberId, Pid, Room);
+
+nkcollab_room_reg_event(RoomId, {nkmedia_api, Pid}, {destroyed, _Reason}, Room) ->
+    nkcollab_room_api:room_stopped(RoomId, Pid, Room);
 
 nkcollab_room_reg_event(_RoomId, _Link, _Event, Room) ->
     {ok, Room}.
+
+
+% %% @doc Called when the status of the room changes, for each registered
+% %% member
+% -spec nkcollab_room_member_event(room_id(), nklib:link(), nkcollab_room:member_id(), 
+%                                  nkcollab_room:event(), room()) ->
+%     {ok, room()} | continue().
+
+% nkcollab_room_member_event(RoomId, {nmedia_api, Pid}, Link, MemberId, 
+%                            {stopped_member, _Event, Room) ->
+%     {ok, Room}.
+
+
+% nkcollab_room_member_event(_RoomId, _Link, _MemberId, _Event, Room) ->
+%     {ok, Room}.
 
 
 %% @doc Called when a registered process fails
@@ -192,7 +214,7 @@ api_server_reg_down(_Link, _Reason, _State) ->
 %% ===================================================================
 
 
-%% @private
+% %% @private
 nkmedia_room_reg_event(RoomId, {nkcollab_room, RoomId, _Pid}, Event, _Session) ->
     nkcollab_room:media_room_event(RoomId, Event),
     continue;

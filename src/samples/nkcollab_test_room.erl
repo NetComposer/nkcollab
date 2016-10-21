@@ -178,14 +178,14 @@ subscribe_all(Pid) ->
 
 
 
-% %% Invite
-% invite(Dest, Type, Opts) ->
-%     WsPid = get_client(),
-%     start_invite(Dest, WsPid, Opts#{type=>Type}).
-
-% invite_listen(Dest, Room) ->
-%     {ok, PubId, Backend} = nkcollab_test:get_publisher(Room, 1),
-%     invite(Dest, listen, #{backend=>Backend, publisher_id=>PubId}).
+%% Invite
+start_viewer(Dest, RoomId, PresenterId) ->
+    case nkservice_api_client:get_user_pids(Dest) of
+        [Pid|_] ->
+            start_viewer(Dest, RoomId, PresenterId, Pid, #{});
+        [] ->
+            {error, not_found}
+    end.
 
 % switch(SessId, Pos) ->
 %     {ok, listen, #{room_id:=Room}, _} = nkmedia_session:get_type(SessId),
@@ -198,10 +198,6 @@ subscribe_all(Pid) ->
 % %% Msglog
 broadcast(Pid, Room, Msg) ->
     cmd(Pid, send_broadcast, #{room_id=>Room, msg=>Msg}).
-
-msglog_subscribe(C, Room) ->
-    Spec = #{class=>media, subclass=>room, obj_id=>Room},
-    nkservice_api_client:cmd(C, core, event, subscribe, Spec).
 
 
 %% Gelf
@@ -269,9 +265,15 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
             verto_pid => pid2bin(self())
         }
     },
-    case incoming(Dest, Ws, Opts) of
+    case start_presenter(Dest, Ws, Opts) of
         {ok, _MemberId, SessId, Answer} ->
-            {answer, Answer, {api_test_room, SessId, Ws}, Verto};
+            % We register Verto at the session, so that when the session stops,
+            % it will be detected (in nkcollab_verto_callbacks)
+            {ok, SessPid} = 
+                nkmedia_session:register(SessId, {nkcollab_verto, CallId, self()}),
+            % We register the session at Verto, so that when we BYE we will stop 
+            % the session
+            {answer, Answer, {nkmedia_session, SessId, SessPid}, Verto};
         {error, Reason} ->
             lager:notice("Verto invite rejected ~p", [Reason]),
             {rejected, Reason, Verto}
@@ -282,7 +284,7 @@ nkcollab_verto_invite(_SrvId, _CallId, _Offer, _Verto) ->
 
 
 %% @private
-nkcollab_verto_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, 
+nkcollab_verto_answer(_CallId, {nkmedia_session, SessId, _SessPid}, Answer, 
                      #{test_api_server:=Ws}=Verto) ->
     {ok, _} = cmd(Ws, set_answer, #{session_id=>SessId, answer=>Answer}),
     {ok, Verto};
@@ -291,11 +293,10 @@ nkcollab_verto_answer(_CallId, _Link, _Answer, Verto) ->
     {ok, Verto}.
 
 
-% @private Called when we receive BYE from Verto
-nkcollab_verto_bye(_CallId, {api_test_room, SessId, WsPid}, Verto) ->
-    lager:info("Verto Session BYE for ~s (~p)", [SessId, WsPid]),
-    nkmedia_session:stop(SessId, verto_bye),
-    {ok, Verto};
+% % @private Called when we receive BYE from Verto
+% nkcollab_verto_bye(_CallId, {room, _RoomId, _MemberId, SessId}, Verto) ->
+%     nkmedia_session:stop(SessId, verto_bye),
+%     {ok, Verto};
 
 nkcollab_verto_bye(_CallId, _Link, _Verto) ->
     continue.
@@ -315,13 +316,13 @@ nkcollab_verto_terminate(_Reason, Verto) ->
 %% ===================================================================
 
 %% @private
-nkmedia_janus_registered(User, Janus) ->
+nkcollab_janus_registered(User, Janus) ->
     Pid = connect(User, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}}.
 
 
 % @private Called when we receive INVITE from Janus
-nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
+nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     #{dest:=Dest} = Offer,
     Opts = #{
         offer => Offer,
@@ -331,7 +332,7 @@ nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
             janus_pid => pid2bin(self())
         }
     },
-    case incoming(Dest, Ws, Opts) of
+    case start_presenter(Dest, Ws, Opts) of
         {ok, SessId, _SessPid} ->
             {ok, {api_test_session, SessId, Ws}, Janus};
         {error, Reason} ->
@@ -341,40 +342,40 @@ nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
 
 
 %% @private
-nkmedia_janus_candidate(_CallId, {api_test_session, SessId, WsPid}, Candidate, Janus) ->
+nkcollab_janus_candidate(_CallId, {api_test_session, SessId, WsPid}, Candidate, Janus) ->
     {ok, _} = candidate(WsPid, SessId, Candidate),
     {ok, Janus};
 
-nkmedia_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
+nkcollab_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, 
+nkcollab_janus_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, 
                      #{test_api_server:=Ws}=Janus) ->
     {ok, _} = cmd(Ws, set_answer, #{session_id=>SessId, answer=>Answer}),
     {ok, Janus};
 
-nkmedia_janus_answer(_CallId, _Link, _Answer, Janus) ->
+nkcollab_janus_answer(_CallId, _Link, _Answer, Janus) ->
     {ok, Janus}.
 
 
 %% @private BYE from Janus
-nkmedia_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
+nkcollab_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
     lager:notice("Janus Session BYE for ~s (~p)", [SessId, WsPid]),
     {ok, _} = cmd(WsPid, SessId, destroy),
     {ok, Janus};
 
-nkmedia_janus_bye(_CallId, _Link, _Janus) ->
+nkcollab_janus_bye(_CallId, _Link, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_terminate(_Reason, #{test_api_server:=Pid}=Janus) ->
+nkcollab_janus_terminate(_Reason, #{test_api_server:=Pid}=Janus) ->
     nkservice_api_client:stop(Pid),
     {ok, Janus};
 
-nkmedia_janus_terminate(_Reason, Janus) ->
+nkcollab_janus_terminate(_Reason, Janus) ->
     {ok, Janus}.
 
 
@@ -386,7 +387,7 @@ nkmedia_janus_terminate(_Reason, Janus) ->
 %% ===================================================================
 
 %% @private
-incoming(<<"p", RoomId/binary>>, WsPid, Opts) ->
+start_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
     RoomConfig = #{
         class => sfu, 
         room_id => RoomId,
@@ -399,9 +400,9 @@ incoming(<<"p", RoomId/binary>>, WsPid, Opts) ->
     end,
     Opts2 = Opts#{
         room_id => RoomId,
-        meta => #{module=>nkcollab_test_room}
+        meta => #{module=>nkcollab_test_room, type=>presenter}
     },
-    case cmd(WsPid, create_member, Opts2) of
+    case cmd(WsPid, start_presenter, Opts2) of
         {ok, 
             #{
                 <<"member_id">> := MemberId, 
@@ -414,46 +415,64 @@ incoming(<<"p", RoomId/binary>>, WsPid, Opts) ->
             {error, Error}
     end;
 
-incoming(_Dest, _WsPid, _Opts) ->
+start_presenter(_Dest, _WsPid, _Opts) ->
     {error, unknown_destination}.
 
 
-% %% @private
-% start_invite(Num, WsPid, Config) ->
-%     case nkcollab_test:find_user(Num) of
-%         not_found ->
-%             {error, unknown_user};
-%         Dest ->
-%             Config2 = Config#{no_offer_trickle_ice=>true},
-%             {ok, SessId, SessPid} = start_session(WsPid, Config2),
-%             {ok, Offer} = cmd(WsPid, SessId, get_offer),
-%             SessLink = {nkmedia_session, SessId, SessPid},
-%             Syntax = nkmedia_api_syntax:offer(),
-%             {ok, Offer2, _} = nklib_config:parse_config(Offer, Syntax, #{return=>map}),
-%             start_invite2(Dest, SessId, Offer2, SessLink)
-%     end.
+%% @private
+start_viewer(Num, RoomId, Presenter, WsPid, Opts) ->
+    case nkcollab_test:find_user(Num) of
+        not_found ->
+            {error, unknown_user};
+        Dest ->
+            Opts2 = Opts#{
+                room_id => RoomId,
+                backend => nkmedia_janus,
+                meta => #{module=>nkcollab_test_room, type=>viewer},
+                presenter_id => Presenter
+            },
+            case cmd(WsPid, start_viewer, Opts2) of
+                {ok, 
+                    #{
+                        <<"member_id">> := _MemberId, 
+                        <<"session_id">> := SessId, 
+                        <<"offer">> := Offer
+                    }
+                } ->
+                    Syntax = nkmedia_api_syntax:offer(),
+                    {ok, Offer2, _} = 
+                        nklib_config:parse_config(Offer, Syntax, #{return=>map}),
+                    {ok, SessPid} = nkmedia_session:find(SessId),
+                    Link = {nkmedia_session, SessId, SessPid},
+                    start_invite2(Dest, SessId, Offer2, Link);
+                {error, Error} ->
+                    {error, Error}
+            end
+    end.
 
 
-% %% @private
-% start_invite2({nkcollab_verto, VertoPid}, SessId, Offer, SessLink) ->
-%     {ok, InvLink} = nkcollab_verto:invite(VertoPid, SessId, Offer, SessLink),
-%     {ok, _} = nkmedia_session:register(SessId, InvLink);
+%% @private
+start_invite2({nkcollab_verto, VertoPid}, SessId, Offer, SessLink) ->
+    % We register the session at Verto, so that Verto can send the answer
+    % (nkcollab_verto_answer here) and stops
+    {ok, InvLink} = nkcollab_verto:invite(VertoPid, SessId, Offer, SessLink),
+    % We register Verto at the session, so that Verto detects stops
+    {ok, _} = nkmedia_session:register(SessId, InvLink);
 
-% start_invite2({nkmedia_janus, JanusPid}, SessId, Offer, SessLink) ->
-%     {ok, InvLink} = nkcollab_janus:invite(JanusPid, SessId, Offer, SessLink),
-%     {ok, _} = nkmedia_session:register(SessId, InvLink).
+start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
+    {ok, InvLink} = nkcollab_janus:invite(JanusPid, SessId, Offer, SessLink),
+    {ok, _} = nkmedia_session:register(SessId, InvLink).
 
 
 
 %% @private
 api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, UserData) ->
+    #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
     Sub = maps:get(<<"subclass">>, Data, <<"*">>),
     Type = maps:get(<<"type">>, Data, <<"*">>),
     ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
     Body = maps:get(<<"body">>, Data, #{}),
-    lager:error("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
-
     Sender = case Body of
         #{
             <<"verto_call_id">> := SCallId,
@@ -486,16 +505,17 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
                 {janus, CallId, Pid} ->
                     nkcollab_janus:hangup(Pid, CallId);
                 unknown ->
-                    lager:notice("TEST CLIENT SESSION STOP: ~p", [Data])
+                    lager:notice("UNMANAGED CLIENT SESSION STOP: ~p", [Data])
             end;
         _ ->
-            lager:notice("TEST CLIENT event ~s:~s:~s:~s: ~p", 
-                         [Class, Sub, Type, ObjId, Body])
+            lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
+                         [User, Class, Sub, Type, ObjId, Body])
     end,
     {ok, #{}, UserData};
 
 api_client_fun(_Req, UserData) ->
-    lager:error("TEST CLIENT req: ~p", [lager:pr(_Req, ?MODULE)]),
+    #{user:=User} = UserData,
+    lager:error("CLIENT ~s req: ~p", [User, lager:pr(_Req, ?MODULE)]),
     {error, not_implemented, UserData}.
 
 

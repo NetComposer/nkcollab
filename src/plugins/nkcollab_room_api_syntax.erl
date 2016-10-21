@@ -74,16 +74,29 @@ syntax(<<"get_presenters">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(<<"create_member">>, Syntax, Defaults, Mandatory) ->
+syntax(<<"start_presenter">>, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
-            role => {enum, [presenter, viewer]},
             meta => map,
+            backend => atom,
             events_body => map
         }),
         Defaults,
         [room_id|Mandatory]
+    };
+
+syntax(<<"start_viewer">>, Syntax, Defaults, Mandatory) ->
+    {
+        session_opts(Syntax#{
+            room_id => binary,
+            meta => map,
+            presenter_id => integer,
+            backend => atom,
+            events_body => map
+        }),
+        Defaults,
+        [room_id, presenter_id|Mandatory]
     };
 
 syntax(<<"destroy_member">>, Syntax, Defaults, Mandatory) ->
@@ -170,9 +183,6 @@ syntax(<<"get_all_msgs">>, Syntax, Defaults, Mandatory) ->
 
 syntax(<<"set_answer">>, Syntax, Defaults, Mandatory) ->
     nkmedia_api_syntax:syntax(<<"set_answer">>, Syntax, Defaults, Mandatory);
-
-syntax(<<"get_answer">>, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(<<"get_answer">>, Syntax, Defaults, Mandatory);
 
 syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory) ->
     nkmedia_api_syntax:syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory);

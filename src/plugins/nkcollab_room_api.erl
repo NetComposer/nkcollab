@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([cmd/3]).
--export([room_stopped/3, api_room_down/3]).
+-export([member_stopped/4, room_stopped/3, api_room_down/3]).
 
 -include_lib("nkservice/include/nkservice.hrl").
 -include_lib("nksip/include/nksip.hrl").
@@ -70,30 +70,11 @@ cmd(<<"get_presenters">>, #api_req{data=#{room_id:=RoomId}}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"create_member">>, Req, State) ->
-    #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
-    #{room_id:=RoomId} = Data,
-    Config = Data#{
-        register => {nkmedia_api, self()},
-        user_id => User,
-        user_session => UserSession
-    },
-    Role = maps:get(role, Data, presenter),
-    case nkcollab_room:create_member(RoomId, Role, Config) of
-        {ok, MemberId, SessId, Pid} ->
-            nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
-            Body = maps:get(events_body, Data, #{}),
-            Event = get_room_event(SrvId, <<"*">>, RoomId, Body),
-            nkservice_api_server:register_events(self(), Event),
-            case session_reply(SessId, Data) of
-                {ok, Reply} ->
-                    {ok, Reply#{member_id=>MemberId}, State};
-                {error, Error} ->
-                    {error, Error}
-            end;
-        {error, Error} ->
-            {error, Error, State}
-    end;
+cmd(<<"start_presenter">>, Req, State) ->
+    start_member(presenter, Req, State);
+
+cmd(<<"start_viewer">>, Req, State) ->
+    start_member(viewer, Req, State);
 
 cmd(<<"destroy_member">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId} = Data,
@@ -162,9 +143,6 @@ cmd(<<"update_media">>, #api_req{data=Data}, State) ->
 cmd(<<"set_answer">>, Req, State) ->
     nkmedia_api:cmd(<<"set_answer">>, Req, State);
 
-cmd(<<"get_answer">>, Req, State) ->
-    nkmedia_api:cmd(<<"get_answer">>, Req, State);
-
 cmd(<<"set_candidate">>, Req, State) ->
     nkmedia_api:cmd(<<"set_candidate">>, Req, State);
 
@@ -200,25 +178,33 @@ cmd(_Cmd, _Data, _State) ->
 %% Room callbacks
 %% ===================================================================
 
-room_stopped(RoomId, Pid, Room) ->
+%% @private The room has sent the event 'stopped_member'
+member_stopped(RoomId, MemberId, ApiPid, Room) ->
     #{srv_id:=SrvId} = Room,
-    Event = get_room_event(SrvId, <<"*">>, RoomId, undefined),
-    nkservice_api_server:unregister_events(Pid, Event),
-    nkservice_api_server:unregister(Pid, {nkcollab_room, RoomId, self()}),
+    Event = get_room_event(SrvId, <<"*">>, RoomId, #{}),
+    nkservice_api_server:unregister_event(ApiPid, Event, MemberId),
     {ok, Room}.
+
+
+%% @private The room has sent the event 'stopped'
+room_stopped(RoomId, ApiPid, Room) ->
+    nkservice_api_server:unregister(ApiPid, {nkcollab_room, RoomId, self()}),
+    {ok, Room}.
+
+
 
 
 %% ===================================================================
 %% API server callbacks
 %% ===================================================================
 
-%% @private Called when the API server detects room has fallen
+%% @private The API server detected room has fallen
 
 api_room_down(RoomId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Collab Room ~s is down: ~p", [RoomId, Reason]),
     Event = get_room_event(SrvId, <<"*">>, RoomId, undefined),
-    nkservice_api_server:unregister_events(self(), Event),
+    nkservice_api_server:unregister_event(self(), Event, all),
     nkcollab_room_api_events:room_down(SrvId, RoomId).
 
 
@@ -226,6 +212,32 @@ api_room_down(RoomId, Reason, State) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+start_member(Role, Req, State) ->
+    #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
+    #{room_id:=RoomId} = Data,
+    Config = Data#{
+        register => {nkmedia_api, self()},
+        user_id => User,
+        user_session => UserSession
+    },
+    case nkcollab_room:create_member(RoomId, Role, Config) of
+        {ok, MemberId, SessId, Pid} ->
+            nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
+            Body = maps:get(events_body, Data, #{}),
+            Event = get_room_event(SrvId, <<"*">>, RoomId, Body),
+            nkservice_api_server:register_event(self(), Event, MemberId),
+            case session_reply(SessId, Data) of
+                {ok, Reply} ->
+                    {ok, Reply#{member_id=>MemberId}, State};
+                {error, Error} ->
+                    {error, Error}
+            end;
+        {error, Error} ->
+            {error, Error, State}
+    end.
+
+
 
 %% @private
 session_reply(SessId, Config) ->
