@@ -40,7 +40,7 @@
 %%     (like Kurento) the candidates will be buffered and the answer
 %%     will be sent when ready
 %%     If the client is Janus, it sends the offer SDP with trickle. 
-%%     When it sends a candidate the nkmedia_janus_candidate callback sends it
+%%     When it sends a candidate the nkcollab_janus_candidate callback sends it
 %%     to the session. If the backend has not set no_offer_trickle_ice, they will
 %%     be sent directly to the backend. Otherwise (FS), they will be buffered and sent 
 %%     to the backend when ready.
@@ -299,9 +299,9 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, Verto) ->
 
 
 % @private Called when we receive INVITE from Janus
-nkmedia_janus_invite(_SrvId, CallId, Offer, Janus) ->
+nkcollab_janus_invite(_SrvId, CallId, Offer, Janus) ->
     #{dest:=Dest} = Offer, 
-    Reg = {nkmedia_janus, CallId, self()},
+    Reg = {nkcollab_janus, CallId, self()},
     case incoming(Dest, Offer, Reg, #{no_answer_trickle_ice => true}) of
         {ok, _SessId, SessLink} ->
             {ok, SessLink, Janus};
@@ -507,7 +507,7 @@ incoming(<<"proxy-test">>, Offer, Reg, Opts) ->
     % {ok, _, _} = start_session(echo, ConfigB),
 
     % % This, however works:
-    % {nkmedia_janus, Pid} = find_user(a),
+    % {nkcollab_janus, Pid} = find_user(a),
     % SessLink = {nkmedia_session, SessId, SessPid},
     % {ok, _} = nkcollab_janus:invite(Pid, SessId, Offer2, SessLink),
 
@@ -558,7 +558,7 @@ start_invite(Dest, Type, Config) ->
             {ok, InvLink} = nkcollab_verto:invite(VertoPid, SessId, Offer, SessLink),
             {ok, _} = nkmedia_session:register(SessId, InvLink),
             {ok, SessId};
-        {nkmedia_janus, JanusPid} ->
+        {nkcollab_janus, JanusPid} ->
             Config2 = Config#{no_offer_trickle_ice=>true},
             {ok, SessId, SessLink} = start_session(Type, Config2),
             {ok, Offer} = nkmedia_session:get_offer(SessId),
@@ -586,7 +586,7 @@ find_user(User) ->
         [] ->
             case nkcollab_janus:find_user(User2) of
                 [Pid|_] ->
-                    {nkmedia_janus, Pid};
+                    {nkcollab_janus, Pid};
                 [] ->
                     case 
                         nksip_registrar:find(test, sip, User2, <<"nkcollab">>) 

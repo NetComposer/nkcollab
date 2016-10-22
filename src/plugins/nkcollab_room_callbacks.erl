@@ -69,9 +69,9 @@ plugin_stop(Config, #{name:=Name}) ->
 -spec error_code(term()) ->
     {integer(), binary()} | continue.
 
-error_code(media_room_down)   -> {401001, "Media room failed"};
-error_code(missing_presenter) -> {401002, "Media room failed"};
-
+error_code(media_room_down)     -> {401001, "Media room failed"};
+error_code(presenter_not_found) -> {401002, "Presenter not found"};
+error_code(already_listening)   -> {401003, "Already listening"};
 error_code(_) -> continue.
 
 

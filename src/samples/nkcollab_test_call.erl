@@ -303,24 +303,24 @@ nkcollab_verto_terminate(Reason, Verto) ->
 
 %% @private
 %% If the register with tXXXX, and API session is emulated
-nkmedia_janus_registered(<<"t", Num/binary>>, Janus) ->
+nkcollab_janus_registered(<<"t", Num/binary>>, Janus) ->
     Pid = connect(Num, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}};
 
-nkmedia_janus_registered(_User, Janus) ->
+nkcollab_janus_registered(_User, Janus) ->
     {ok, Janus}.
 
 
 
 % @private Called when we receive INVITE from Janus
-nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
+nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     true = is_process_alive(Ws),
     #{dest:=Dest} = Offer,
     Events = #{
         janus_call_id => CallId,
         janus_pid => pid2bin(self())
     },
-    Link = {nkmedia_janus, CallId, self()},
+    Link = {nkcollab_janus, CallId, self()},
     case start_call(Dest, Offer, CallId, Ws, Events, Link) of
         ok ->
             {ok, {test_api_server, Ws}, Janus};
@@ -330,13 +330,13 @@ nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     end;
 
 %% @private Standard Janus calling (see default implementation)
-nkmedia_janus_invite(_SrvId, _CallId, _Offer, _Janus) ->
+nkcollab_janus_invite(_SrvId, _CallId, _Offer, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_answer(CallId, {test_api_server, Ws}, Answer, Janus) ->
-    Callee = #{info => nkmedia_janus_test},
+nkcollab_janus_answer(CallId, {test_api_server, Ws}, Answer, Janus) ->
+    Callee = #{info => nkcollab_janus_test},
     case call_cmd(Ws, accepted, #{call_id=>CallId, answer=>Answer, callee=>Callee}) of
         {ok, #{}} ->
             %% Call will get the answer and send it back to the session
@@ -347,12 +347,12 @@ nkmedia_janus_answer(CallId, {test_api_server, Ws}, Answer, Janus) ->
     end,
     {ok, Janus};
 
-nkmedia_janus_answer(_CallId, _Link, _Answer, _Janus) ->
+nkcollab_janus_answer(_CallId, _Link, _Answer, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_candidate(CallId, {test_api_server, Ws}, Candidate, Janus) ->
+nkcollab_janus_candidate(CallId, {test_api_server, Ws}, Candidate, Janus) ->
     case Candidate of
         #candidate{last=true} ->
             lager:error("CC1"),
@@ -369,22 +369,22 @@ nkmedia_janus_candidate(CallId, {test_api_server, Ws}, Candidate, Janus) ->
     end,
     {ok, Janus};
 
-nkmedia_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
+nkcollab_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_bye(CallId, {test_api_server, Ws}, Janus) ->
+nkcollab_janus_bye(CallId, {test_api_server, Ws}, Janus) ->
     call_cmd(Ws, hangup, #{call_id=>CallId, reason=><<"Janus Stop">>}),
     {ok, Janus};
 
-nkmedia_janus_bye(_CallId, _Link, _Verto) ->
+nkcollab_janus_bye(_CallId, _Link, _Verto) ->
     continue.
 
 
 %% @private
-nkmedia_janus_terminate(Reason, Janus) ->
-    nkcollab_test_api:nkmedia_janus_terminate(Reason, Janus).
+nkcollab_janus_terminate(Reason, Janus) ->
+    nkcollab_test_api:nkcollab_janus_terminate(Reason, Janus).
 
 
 

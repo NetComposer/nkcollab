@@ -63,7 +63,15 @@ cmd(<<"get_info">>, #api_req{data=#{room_id:=RoomId}}, State) ->
     end;
 
 cmd(<<"get_presenters">>, #api_req{data=#{room_id:=RoomId}}, State) ->
-    case nkcollab_room:get_presenters(RoomId) of
+    case nkcollab_room:get_members(RoomId, presenter) of
+        {ok, Data} ->
+            {ok, Data, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(<<"get_viewers">>, #api_req{data=#{room_id:=RoomId}}, State) ->
+    case nkcollab_room:get_members(RoomId, viewer) of
         {ok, Data} ->
             {ok, Data, State};
         {error, Error} ->
@@ -99,9 +107,9 @@ cmd(<<"update_presenter">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"add_viewer">>, #api_req{data=Data}, State) ->
+cmd(<<"add_listener">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId, presenter_id:=PresenterId} = Data,
-    case nkcollab_room:add_viewer(RoomId, MemberId, PresenterId, Data) of
+    case nkcollab_room:add_listener(RoomId, MemberId, PresenterId, Data) of
         {ok, SessId} ->
             case session_reply(SessId, Data) of
                 {ok, Reply} ->
@@ -113,9 +121,9 @@ cmd(<<"add_viewer">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"remove_viewer">>, #api_req{data=Data}, State) ->
+cmd(<<"remove_listener">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId, presenter_id:=PresenterId} = Data,
-    case nkcollab_room:remove_viewer(RoomId, MemberId, PresenterId) of
+    case nkcollab_room:remove_listener(RoomId, MemberId, PresenterId) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->
@@ -150,10 +158,10 @@ cmd(<<"set_candidate_end">>, Req, State) ->
     nkmedia_api:cmd(<<"set_candidate_end">>, Req, State);
 
 cmd(<<"send_broadcast">>, ApiReq, State) ->
-    #api_req{data=Data, user=User, session=MemberId} = ApiReq,
-    #{room_id:=RoomId, msg:=Msg} = Data,
-    RoomMsg = Msg#{user_id=>User, member_id=>MemberId},
-    case nkcollab_room:broadcast(RoomId, RoomMsg) of
+    #api_req{data=Data, user=User} = ApiReq,
+    #{room_id:=RoomId, member_id:=MemberId, msg:=Msg} = Data,
+    RoomMsg = Msg#{user_id=>User},
+    case nkcollab_room:broadcast(RoomId, MemberId, RoomMsg) of
         {ok, MsgId} ->
             {ok, #{msg_id=>MsgId}, State};
         {error, Error} ->
@@ -162,7 +170,7 @@ cmd(<<"send_broadcast">>, ApiReq, State) ->
 
 cmd(<<"get_all_msgs">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId} = Data,
-    case nkcollab_room:get_msgs(RoomId, #{}) of
+    case nkcollab_room:get_all_msgs(RoomId) of
         {ok, List} ->
             {ok, List, State};
         {error, Error} ->

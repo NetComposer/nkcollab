@@ -86,6 +86,14 @@ syntax(<<"start_presenter">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
+syntax(<<"get_viewers">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{room_id => binary},
+        Defaults, 
+        [room_id|Mandatory]
+    };
+
+
 syntax(<<"start_viewer">>, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
@@ -119,7 +127,7 @@ syntax(<<"update_presenter">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"add_viewer">>, Syntax, Defaults, Mandatory) ->
+syntax(<<"add_listener">>, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
@@ -130,7 +138,7 @@ syntax(<<"add_viewer">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"remove_viewer">>, Syntax, Defaults, Mandatory) ->
+syntax(<<"remove_listener">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -166,10 +174,11 @@ syntax(<<"send_broadcast">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
+            member_id => integer,
             msg => map
         },
         Defaults,
-        [room_id, msg|Mandatory]
+        [room_id, member_id, msg|Mandatory]
     };
 
 syntax(<<"get_all_msgs">>, Syntax, Defaults, Mandatory) ->

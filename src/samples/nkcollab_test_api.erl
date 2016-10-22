@@ -194,7 +194,6 @@ subscribe_all(WsPid) ->
 
 %% Invite
 invite(Dest, Type, Opts) ->
-    WsPid = get_client(),
     case nkservice_api_client:get_user_pids(Dest) of
         [Pid|_] ->
             start_invite(Dest, Pid, Opts#{type=>Type});
@@ -336,13 +335,13 @@ nkcollab_verto_terminate(_Reason, Verto) ->
 %% ===================================================================
 
 %% @private
-nkmedia_janus_registered(User, Janus) ->
+nkcollab_janus_registered(User, Janus) ->
     Pid = connect(User, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}}.
 
 
 % @private Called when we receive INVITE from Janus
-nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
+nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     #{dest:=Dest} = Offer,
     Events = #{
         janus_call_id => CallId,
@@ -358,40 +357,40 @@ nkmedia_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
 
 
 %% @private
-nkmedia_janus_candidate(_CallId, {api_test_session, SessId, WsPid}, Candidate, Janus) ->
+nkcollab_janus_candidate(_CallId, {api_test_session, SessId, WsPid}, Candidate, Janus) ->
     {ok, _} = candidate(WsPid, SessId, Candidate),
     {ok, Janus};
 
-nkmedia_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
+nkcollab_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, 
+nkcollab_janus_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, 
                      #{test_api_server:=Ws}=Janus) ->
     {ok, _} = cmd(Ws, SessId, set_answer, #{answer=>Answer}),
     {ok, Janus};
 
-nkmedia_janus_answer(_CallId, _Link, _Answer, Janus) ->
+nkcollab_janus_answer(_CallId, _Link, _Answer, Janus) ->
     {ok, Janus}.
 
 
 %% @private BYE from Janus
-nkmedia_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
+nkcollab_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
     lager:notice("Janus Session BYE for ~s (~p)", [SessId, WsPid]),
     {ok, _} = cmd(WsPid, SessId, destroy),
     {ok, Janus};
 
-nkmedia_janus_bye(_CallId, _Link, _Janus) ->
+nkcollab_janus_bye(_CallId, _Link, _Janus) ->
     continue.
 
 
 %% @private
-nkmedia_janus_terminate(_Reason, #{test_api_server:=Pid}=Janus) ->
+nkcollab_janus_terminate(_Reason, #{test_api_server:=Pid}=Janus) ->
     nkservice_api_client:stop(Pid),
     {ok, Janus};
 
-nkmedia_janus_terminate(_Reason, Janus) ->
+nkcollab_janus_terminate(_Reason, Janus) ->
     {ok, Janus}.
 
 
@@ -505,7 +504,7 @@ start_invite2({nkcollab_verto, VertoPid}, SessId, Offer, SessLink) ->
     {ok, InvLink} = nkcollab_verto:invite(VertoPid, SessId, Offer, SessLink),
     {ok, _} = nkmedia_session:register(SessId, InvLink);
 
-start_invite2({nkmedia_janus, JanusPid}, SessId, Offer, SessLink) ->
+start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
     {ok, InvLink} = nkcollab_janus:invite(JanusPid, SessId, Offer, SessLink),
     {ok, _} = nkmedia_session:register(SessId, InvLink).
 

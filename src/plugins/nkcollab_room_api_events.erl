@@ -66,6 +66,12 @@ event(RoomId, {broadcast, Msg}, Room) ->
 event(RoomId, {info, Info, Meta}, Room) ->
     send_event(RoomId, info, Meta#{info=>Info}, Room);
 
+event(RoomId, {updated_meta, MemberId, Meta}, Room) ->
+    send_event(RoomId, updated_meta, #{member_id=>MemberId, meta=>Meta}, Room);
+
+event(RoomId, {updated_media, MemberId, Media}, Room) ->
+    send_event(RoomId, updated_media, #{member_id=>MemberId, media=>Media}, Room);
+
 event(_RoomId, _Event, Room) ->
     {ok, Room}.
 

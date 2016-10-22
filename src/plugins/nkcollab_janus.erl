@@ -75,7 +75,7 @@
 invite(Pid, CallId, Offer, Link) ->
     case do_call(Pid, {invite, CallId, Offer, Link}) of
         ok ->
-            {ok, {nkmedia_janus, CallId, Pid}};
+            {ok, {nkcollab_janus, CallId, Pid}};
         {error, Error} ->
             {error, Error}
     end.
@@ -209,7 +209,7 @@ conn_init(NkPort) ->
     },
     nklib_proc:put(?MODULE, <<>>),
     lager:info("NkMEDIA Janus Proto new connection (~s, ~p)", [Remote, self()]),
-    {ok, State2} = handle(nkmedia_janus_init, [NkPort], State1),
+    {ok, State2} = handle(nkcollab_janus_init, [NkPort], State1),
     {ok, State2}.
 
 
@@ -261,7 +261,7 @@ conn_encode(Msg, _NkPort) when is_binary(Msg) ->
 conn_handle_call(Msg, From, NkPort, State) ->
     case send_req(Msg, From, NkPort, State) of
         unknown_op ->
-            handle(nkmedia_janus_handle_call, [Msg, From], State);
+            handle(nkcollab_janus_handle_call, [Msg, From], State);
         Other ->
             Other
     end.
@@ -273,7 +273,7 @@ conn_handle_call(Msg, From, NkPort, State) ->
 conn_handle_cast(Msg, NkPort, State) ->
     case send_req(Msg, undefined, NkPort, State) of
         unknown_op ->
-            handle(nkmedia_janus_handle_cast, [Msg], State);
+            handle(nkcollab_janus_handle_cast, [Msg], State);
         Other ->
             Other
     end.
@@ -289,11 +289,11 @@ conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, _NkPort, State) ->
             ?LLOG(notice, "monitor process down for ~s (~p)", [CallId, Link], State),
             {stop, normal, State2};
         not_found ->
-            handle(nkmedia_janus_handle_info, [Info], State)
+            handle(nkcollab_janus_handle_info, [Info], State)
     end;
 
 conn_handle_info(Info, _NkPort, State) ->
-    handle(nkmedia_janus_handle_info, [Info], State).
+    handle(nkcollab_janus_handle_info, [Info], State).
 
 
 %% @doc Called when the connection stops
@@ -301,7 +301,7 @@ conn_handle_info(Info, _NkPort, State) ->
     ok.
 
 conn_stop(Reason, _NkPort, State) ->
-    catch handle(nkmedia_janus_terminate, [Reason], State).
+    catch handle(nkcollab_janus_terminate, [Reason], State).
 
 
 %% ===================================================================
@@ -471,7 +471,7 @@ process_client_req(trickle, Msg, NkPort, #state{session_id=SessionId}=State) ->
     case links_get(CallId, State) of
         {ok, Link} ->
             {ok, State2} = 
-                handle(nkmedia_janus_candidate, [CallId, Link, Candidate], State);
+                handle(nkcollab_janus_candidate, [CallId, Link, Candidate], State);
         not_found ->
             State2 = error(not_found_on_accept_trickle)
     end,
@@ -489,7 +489,7 @@ process_client_msg(register, Body, Msg, NkPort, State) ->
     ?LLOG(info, "received REGISTER (~s)", [User], State),
     nklib_proc:put(?MODULE, User),
     nklib_proc:put({?MODULE, user, User}),
-    {ok, State2} = handle(nkmedia_janus_registered, [User], State),
+    {ok, State2} = handle(nkcollab_janus_registered, [User], State),
     Result = #{event=>registered, username=>User},
     Resp = make_videocall_resp(Result, Msg, State2),
     #state{janus=Janus2} = State2,
@@ -507,7 +507,7 @@ process_client_msg(call, Body, Msg, NkPort, #state{srv_id=SrvId}=State) ->
     Offer = #{dest=>Dest, sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     % io:format("SDP: ~s\n", [SDP]),
     % lager:notice("JSEP: ~p", [Msg#{<<"jsep">>=>maps:remove(<<"sdp">>, JSep)}]),
-    case handle(nkmedia_janus_invite, [SrvId, CallId, Offer], State) of
+    case handle(nkcollab_janus_invite, [SrvId, CallId, Offer], State) of
         {ok, Link, State2} ->
             ok;
         {answer, Answer, Link, State2} ->
@@ -530,7 +530,7 @@ process_client_msg(accept, _Body, Msg, NkPort, State) ->
     Answer = #{sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     case links_get(CallId, State) of
         {ok, Link} ->
-            case handle(nkmedia_janus_answer, [CallId, Link, Answer], State) of
+            case handle(nkcollab_janus_answer, [CallId, Link, Answer], State) of
                 {ok, State2} ->
                     ok;
                 {hangup, Reason, State2} ->
@@ -548,7 +548,7 @@ process_client_msg(hangup, _Body, _Msg, _NkPort, State) ->
     #state{call_id=CallId} = State,
     {ok, State2} = case links_get(CallId, State) of
         {ok, Link} ->
-            handle(nkmedia_janus_bye, [CallId, Link], State);
+            handle(nkcollab_janus_bye, [CallId, Link], State);
         not_found ->
             {ok, State}
     end,
@@ -610,7 +610,7 @@ process_client_msg(start, _Body, Msg, NkPort, State) ->
     nkmedia_app:del(nkcollab_janus_play_reg),
     #state{call_id=CallId} = State,
     ?LLOG(info, "received START (~s)", [CallId], State),
-    case handle(nkmedia_janus_start, [CallId, #{sdp=>SDP}], State) of
+    case handle(nkcollab_janus_start, [CallId, #{sdp=>SDP}], State) of
         {ok, State2} ->
             ok;
         {hangup, Reason, State2} ->
