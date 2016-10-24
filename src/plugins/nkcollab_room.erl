@@ -318,10 +318,13 @@ unregister(RoomId, Link) ->
 
 %% @doc Gets all started rooms
 -spec get_all() ->
-    [{id(), pid()}].
+    [{id(), meta(), pid()}].
 
 get_all() ->
-    nklib_proc:values(?MODULE).
+    [
+        {Id, Meta, Pid} ||
+        {{Id, Meta}, Pid} <- nklib_proc:values(?MODULE)
+    ].
 
 
 %% @private Called from nkcollab_room_callbacks
@@ -360,7 +363,8 @@ media_room_event(_RoomId, _Event) ->
 
 init([#{room_id:=RoomId}=Room]) ->
     true = nklib_proc:reg({?MODULE, RoomId}),
-    nklib_proc:put(?MODULE, RoomId),
+    Meta = maps:get(meta, Room, #{}),
+    nklib_proc:put(?MODULE, {RoomId, Meta}),
     {ok, Pid} = nkmedia_room:register(RoomId, {nkcollab_room, RoomId, self()}),
     {ok, Media} = nkmedia_room:get_room(Pid),
     Room2 = maps:merge(Room, Media),
@@ -432,7 +436,7 @@ handle_call({update_presenter, MemberId, Config}, _From, State) ->
         {ok, Info} ->
             case add_session(publish, MemberId, Config, Info, State) of
                 {ok, SessId, _Info2, State2} ->
-                    State3 = update_all_viewers(MemberId, SessId, State2),
+                    State3 = update_all_listeners(MemberId, SessId, State2),
                     State4 = case Info of
                         #{publish_session_id:=OldSessId} ->
                             stop_sessions(MemberId, [OldSessId], State3);
@@ -795,7 +799,7 @@ remove_session(SessId, MemberId, Info, State) ->
     end,
     Role = case Info2 of
         #{publish_session_id:=_} -> presenter;
-        #{viewer_session_ids:=_} -> viewer;
+        #{listen_session_ids:=_} -> viewer;
         _ -> removed
     end,
     case Role of
@@ -808,23 +812,23 @@ remove_session(SessId, MemberId, Info, State) ->
 
 
 %% @private
-update_all_viewers(PresenterId, PublishId, #state{room=Room}=State) ->
+update_all_listeners(PresenterId, PublishId, #state{room=Room}=State) ->
     #{members:=Members} = Room,
-    update_all_viewers(maps:to_list(Members), PresenterId, PublishId, State).
+    update_all_listeners(maps:to_list(Members), PresenterId, PublishId, State).
 
 
 %% @private
-update_all_viewers([], _PresenterId, _PublishId, State) ->
+update_all_listeners([], _PresenterId, _PublishId, State) ->
     State;
 
-update_all_viewers([{_MemberId, Info}|Rest], PresenterId, PublishId, State) ->
+update_all_listeners([{_MemberId, Info}|Rest], PresenterId, PublishId, State) ->
     case has_presenter(Info, PresenterId) of
         {true, SessId} ->
                 switch_listener(SessId, PublishId);
         false ->
                 ok
     end,
-    update_all_viewers(Rest, PresenterId, PublishId, State).
+    update_all_listeners(Rest, PresenterId, PublishId, State).
 
 
 

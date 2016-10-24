@@ -51,7 +51,7 @@ cmd(<<"destroy">>, #api_req{data=#{room_id:=Id}}, State) ->
     end;
 
 cmd(<<"get_list">>, _Req, State) ->
-    Ids = [#{room_id=>Id} || {Id, _Pid} <- nkcollab_room:get_all()],
+    Ids = [#{room_id=>Id, meta=>Meta} || {Id, Meta, _Pid} <- nkcollab_room:get_all()],
     {ok, Ids, State};
 
 cmd(<<"get_info">>, #api_req{data=#{room_id:=RoomId}}, State) ->
@@ -78,11 +78,11 @@ cmd(<<"get_viewers">>, #api_req{data=#{room_id:=RoomId}}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"start_presenter">>, Req, State) ->
-    start_member(presenter, Req, State);
+cmd(<<"create_presenter">>, Req, State) ->
+    create_member(presenter, Req, State);
 
-cmd(<<"start_viewer">>, Req, State) ->
-    start_member(viewer, Req, State);
+cmd(<<"create_viewer">>, Req, State) ->
+    create_member(viewer, Req, State);
 
 cmd(<<"destroy_member">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId} = Data,
@@ -168,7 +168,7 @@ cmd(<<"send_broadcast">>, ApiReq, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"get_all_msgs">>, #api_req{data=Data}, State) ->
+cmd(<<"get_all_broadcasts">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId} = Data,
     case nkcollab_room:get_all_msgs(RoomId) of
         {ok, List} ->
@@ -221,7 +221,7 @@ api_room_down(RoomId, Reason, State) ->
 %% Internal
 %% ===================================================================
 
-start_member(Role, Req, State) ->
+create_member(Role, Req, State) ->
     #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
     #{room_id:=RoomId} = Data,
     Config = Data#{
