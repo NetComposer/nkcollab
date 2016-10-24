@@ -13,7 +13,7 @@ NkCOLLAB is an scalable and flexible signaling and media server for WebRTC and S
 
 It also possible to add new signaling APIs, or use your own signalling solution out of NkCOLLAB.
 
-NkMEDIA can be managed using [NetComposer API](https://github.com/NetComposer/nkservice/blob/luerl/doc/api_intro.md). In real-life deployments, you will typically connect a server-side application to the management interface. However, being a websocket connection, you can also use a browser to manage sessions (its own or any other's session, if it is authorized).
+NkCOLLAB can be managed using [NetComposer API](https://github.com/NetComposer/nkservice/blob/luerl/doc/api_intro.md). In real-life deployments, you will typically connect a server-side application to the management interface. However, being a websocket connection, you can also use a browser to manage sessions (its own or any other's session, if it is authorized).
 
 ## Features
 * Full support for WebRTC and SIP.
