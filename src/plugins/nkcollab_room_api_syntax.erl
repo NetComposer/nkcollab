@@ -37,6 +37,7 @@ syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
             class => {enum, [sfu]},
             room_id => binary,
             backend => atom,
+            timeout => {integer, 5, 3*24*60*60},
             audio_codec => {enum, [opus, isac32, isac16, pcmu, pcma]},
             video_codec => {enum , [vp8, vp9, h264]},
             bitrate => {integer, 0, none},
@@ -116,12 +117,22 @@ syntax(<<"destroy_member">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"update_presenter">>, Syntax, Defaults, Mandatory) ->
+syntax(<<"update_publisher">>, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
             member_id => integer
         }),
+        Defaults,
+        [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"remove_publisher">>, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            room_id => binary,
+            member_id => integer
+        },
         Defaults,
         [room_id, member_id|Mandatory]
     };
@@ -141,6 +152,7 @@ syntax(<<"remove_listener">>, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
+            
             member_id => integer,
             presenter_id => integer
         },
@@ -163,10 +175,19 @@ syntax(<<"update_media">>, Syntax, Defaults, Mandatory) ->
     {
         media_opts(Syntax#{
             room_id => binary,
-            session_id => binary
+            member_id => integer
         }),
         Defaults,
         [room_id, member_id|Mandatory]
+    };
+
+syntax(<<"update_all_media">>, Syntax, Defaults, Mandatory) ->
+    {
+        media_opts(Syntax#{
+            room_id => binary
+        }),
+        Defaults,
+        [room_id|Mandatory]
     };
 
 syntax(<<"send_broadcast">>, Syntax, Defaults, Mandatory) ->
@@ -209,7 +230,7 @@ syntax(_Cmd, Syntax, Defaults, Mandatory) ->
 
 
 get_room_info(Room) ->
-    Keys = [audio_codec, video_codec, bitrate, class, backend, meta],
+    Keys = [audio_codec, video_codec, bitrate, class, backend, meta, status],
     maps:with(Keys, Room).
 
 

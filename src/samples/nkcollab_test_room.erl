@@ -144,7 +144,16 @@ broadcast(Room, MemberId, Msg) ->
     cmd(send_broadcast, #{room_id=>Room, member_id=>MemberId, msg=>Msg}).
 
 get_msgs(RoomId) ->
-    cmd(get_all_msgs, #{room_id=>RoomId}).
+    cmd(get_all_broadcasts, #{room_id=>RoomId}).
+
+update_meta(RoomId, MemberId, Meta) ->
+    cmd(update_meta, #{room_id=>RoomId, member_id=>MemberId, meta=>Meta}).
+
+update_media(RoomId, MemberId, Media) ->
+    cmd(update_media, Media#{room_id=>RoomId, member_id=>MemberId}).
+
+update_all_media(RoomId, Media) ->
+    cmd(update_all_media, Media#{room_id=>RoomId}).
 
 cmd(Cmd, Data) ->
     Pid = get_client(),
@@ -267,7 +276,7 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
             verto_pid => pid2bin(self())
         }
     },
-    case start_presenter(Dest, Ws, Opts) of
+    case create_presenter(Dest, Ws, Opts) of
         {ok, _MemberId, SessId, Answer} ->
             % We register Verto at the session, so that when the session stops,
             % it will be detected (in nkcollab_verto_callbacks)
@@ -318,7 +327,6 @@ nkcollab_janus_registered(User, Janus) ->
 
 % @private Called when we receive INVITE from Janus
 nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
-    lager:error("JIU1"),
     #{dest:=Dest} = Offer,
     Opts = #{
         offer => Offer,
@@ -328,7 +336,7 @@ nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
             janus_pid => pid2bin(self())
         }
     },
-    case start_presenter(Dest, Ws, Opts) of
+    case create_presenter(Dest, Ws, Opts) of
         {ok, _MemberId, SessId, Answer} ->
             % We register Janus at the session, so that when the session stops,
             % it will be detected (in nkcollab_janus_callbacks)
@@ -343,7 +351,6 @@ nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     end;
 
 nkcollab_janus_invite(_SrvId, _CallId, _Offer, _Janus) ->
-    lager:error("JIU2"),
     continue.
 
 
@@ -384,7 +391,7 @@ nkcollab_janus_terminate(_Reason, Janus) ->
 %% ===================================================================
 
 %% @private
-start_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
+create_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
     RoomConfig = #{
         class => sfu, 
         room_id => RoomId,
@@ -392,14 +399,14 @@ start_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
         bitrate => 100000
     },
     case create(RoomConfig) of
-        {ok, _} -> ok;
+        {ok, _} -> timer:sleep(199);
         {error, {304002, _}} -> ok
     end,
     Opts2 = Opts#{
         room_id => RoomId,
         meta => #{module=>nkcollab_test_room, type=>presenter}
     },
-    case cmd(WsPid, start_presenter, Opts2) of
+    case cmd(WsPid, create_presenter, Opts2) of
         {ok, 
             #{
                 <<"member_id">> := MemberId, 
@@ -412,12 +419,12 @@ start_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
             {error, Error}
     end;
 
-start_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
+create_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
     Opts2 = Opts#{
         room_id => RoomId,
         member_id => 1
     },
-    case cmd(WsPid, update_presenter, Opts2) of
+    case cmd(WsPid, update_publisher, Opts2) of
         {ok, 
             #{
                 <<"session_id">> := SessId, 
@@ -429,7 +436,7 @@ start_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
             {error, Error}
     end;
 
-start_presenter(_Dest, _WsPid, _Opts) ->
+create_presenter(_Dest, _WsPid, _Opts) ->
     {error, unknown_destination}.
 
 
@@ -467,7 +474,6 @@ add_listener(Num, RoomId, Member, Presenter, WsPid, Opts) ->
         Dest ->
             Opts2 = Opts#{
                 room_id => RoomId,
-                meta => #{module=>nkcollab_test_room, type=>listener},
                 member_id => Member,
                 presenter_id => Presenter
             },

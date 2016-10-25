@@ -93,9 +93,9 @@ cmd(<<"destroy_member">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"update_presenter">>, #api_req{data=Data}, State) ->
+cmd(<<"update_publisher">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId} = Data,
-    case nkcollab_room:update_presenter(RoomId, MemberId, Data) of
+    case nkcollab_room:update_publisher(RoomId, MemberId, Data) of
         {ok, SessId} ->
             case session_reply(SessId, Data) of
                 {ok, Reply} ->
@@ -103,6 +103,15 @@ cmd(<<"update_presenter">>, #api_req{data=Data}, State) ->
                 {error, Error} ->
                     {error, Error}
             end;
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(<<"remove_publisher">>, #api_req{data=Data}, State) ->
+    #{room_id:=RoomId, member_id:=MemberId} = Data,
+    case nkcollab_room:remove_publisher(RoomId, MemberId) of
+        ok ->
+            {ok, #{}, State};
         {error, Error} ->
             {error, Error, State}
     end;
@@ -142,6 +151,15 @@ cmd(<<"update_meta">>, #api_req{data=Data}, State) ->
 cmd(<<"update_media">>, #api_req{data=Data}, State) ->
     #{room_id:=RoomId, member_id:=MemberId} = Data,
     case nkcollab_room:update_media(RoomId, MemberId, Data) of
+        ok ->
+            {ok, #{}, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(<<"update_all_media">>, #api_req{data=Data}, State) ->
+    #{room_id:=RoomId} = Data,
+    case nkcollab_room:update_all_media(RoomId, Data) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->

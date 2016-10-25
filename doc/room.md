@@ -6,8 +6,10 @@ This documente describes the currently supported External API for NkCOLLAB Rooms
 See the [NkSERVICE API Introduction](https://github.com/NetComposer/nkservice/blob/luerl/doc/api_intro.md) for an introduction to the interface, along with [NkMEDIA](https://github.com/NetComposer/nkcollab) documentation.
 
 Once the room is created, you can create new _members_, that can be either:
-* _presenter_: a member that publishes one stream and can listen (offered by presenters)
-* _viewer_: a member that publishes no stream but can listen to one or any number of streams (offered by presenters).
+* _presenter_: a member that publishes one single _publishing stream_ and can start any number of _listening streams_ (connected to existing publishing streamings offered by itself or other presenters). The publisher stream and each listening streams have its own SDP pair offer/response. If the publishing stream stops for some reason, the member is converted into a _viewer_.
+* _viewer_: a member that publishes no stream but can listen to one or any number of listening streams (offered by presenters).
+
+When any member has no more remaining sessions (publishing or listening) is destroyed.
 
 
 # Index
@@ -23,11 +25,13 @@ Once the room is created, you can create new _members_, that can be either:
   * [`set_answer`](#set_answer): Sets the answer for a session
   * [`get_viewers`](#get_viewers): Gets a list of all current _viewers_
   * [`destroy_member`](#destroy_member): Destroys a previously started _presenter_ or  _viewer_
-  * [`update_presenter`](#update_presenter): Chnages current _presenter_ media and reconnect all current connecte to it to the new publish stream.
+  * [`update_publisher`](#update_publisher): Chnages current _presenter_ media and reconnect all current connecte to it to the new publish stream.
+  * [`remove_publisher`](#remove_publisher): Removes the publishing session froma _presenter_.
   * [`add_listener`](#add_listener): Adds a new _listening_ stream to a _publisher_ or _viewer_.
   * [`remove_listener`](#remove_listener): Removes a _listening_ stream to a _publisher_ or _viewer_.
   * [`update_meta`](#update_meta): Updates a current member _metadata_.
   * [`update_media`](#update_media): Updates media parameters like muting and bandwidth.
+  * [`update_all_media`](#update_all_media): Updates media parameters like muting and bandwidth for all presenters.
   * [`send_broadcast`](#send_broadcast): Sends a broadcast, persistent message to all participants.
   * [`get_all_broadcasts`](#get_all_broadcasts): Retrieves all broadcasts sent for this room.
   * [`set_candidate`](#set_candidate): Sends a Trickle ICE candidate
@@ -169,7 +173,9 @@ Gets information about a started room
 	result: "ok",
 	data: {
 		backend: "nkmedia_janus",
-        audio_codec: "pcma"
+        audio_codec: "pcma",
+        meta: {
+        },
     },
     tid: 1
 }
@@ -416,11 +422,16 @@ Removes a member and destroys all related media sessions (publishers and listene
 Fields `member_id` and `room_id` are mandatory.
 
 
-## update_presenter
+## update_publisher
 
 Updates a current presenter with a new SDP. Fields `room_id`, `member_id` and `offer` are mandatory.
 
 All current listening sessions that were listening to this presenter will be connected to the new media automatically.
+
+
+## remove_publisher
+
+Removes the current publishing session from a presenter, converting it into a _viewer_ member. Fields `room_id` and `member_id` and `offer` are mandatory. All connected listening sessions will be disconnected.
 
 
 ## add_listener
@@ -451,6 +462,18 @@ Field|Default|Description
 ---|---|---|---
 room_id|(mandatory)|Room Id
 member_id|(mandatory)|Room Id
+mute_audio|false|Mute presenter's audio
+mute_video|Mute presenter's video
+bitrate|100000|Set bitrate (kpbs)
+
+
+## update_all_media
+
+Similar to `update_media`, but applies to all current presenters.
+
+Field|Default|Description
+---|---|---|---
+room_id|(mandatory)|Room Id
 mute_audio|false|Mute presenter's audio
 mute_video|Mute presenter's video
 bitrate|100000|Set bitrate (kpbs)
@@ -521,7 +544,7 @@ started_member|member_id, role, user_id, meta|Fired when a new members joins the
 stopped_member|member_id, role, user_id, meta|An existing member is leaving the room
 stopped_session|member_id, session_id|A session (belonging to a member) has stopped
 broadcast|member_id, user_id, ...|Broadcast message
-updated_meta|member_id, meta|A member has updated it's _metadata_
+updated_member|member_id, meta, role|A member has updated it's _metadata_
 updated_media|member_id, ...|A member has updated it's media
 member_info|member_id, ...|Several possible informations about user
 room_info|member_id, ...|Several possible informations about the room

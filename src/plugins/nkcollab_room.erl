@@ -24,11 +24,13 @@
 -behaviour(gen_server).
 
 -export([start/2, stop/1, stop/2, get_room/1, get_members/2]).
--export([create_member/3, destroy_member/2, update_presenter/3,
+-export([create_member/3, destroy_member/2]).
+-export([update_publisher/3, remove_publisher/2,
          add_listener/4, remove_listener/3]).
--export([update_meta/3, update_media/3]).
--export([broadcast/3, get_all_msgs/1, send_info/3]).
--export([media_room_event/2]).
+-export([update_meta/3, update_media/3, update_all_media/2]).
+-export([broadcast/3, get_all_msgs/1]).
+-export([send_room_info/2, send_session_info/3, send_member_info/3]).
+-export([media_session_event/3, media_room_event/2]).
 -export([register/2, unregister/2, get_all/0]).
 -export([find/1, do_call/2, do_call/3, do_cast/2]).
 -export([init/1, terminate/2, code_change/3, handle_call/3,
@@ -72,6 +74,7 @@
         user_id => binary(),        
         meta => meta(),
         role => role(),
+        status => map(),
         publish_session_id => session_id(),
         listen_session_ids => #{session_id() => member_id()}
     }.
@@ -93,7 +96,8 @@
     #{
         room_id => id(),
         srv_id => nkservice:id(),
-        members => #{member_id() => member_info()}
+        members => #{member_id() => member_info()},
+        status => map()
     }.
 
 
@@ -108,7 +112,7 @@
     media_opts() | session_opts().
 
 
--type update_presenter_opts() :: media_opts() | session_opts().
+-type update_publisher_opts() :: media_opts() | session_opts().
 
 
 -type media_opts() ::
@@ -130,16 +134,14 @@
     }.
 
 
--type info() :: atom().
-
-
 -type event() :: 
     created                                         |
     {started_member, member_id(), member_info()}    |
     {stopped_member, member_id(), member_info()}    |
-    % {started_session, session_id(), member_id()}    |
     {stopped_session, session_id(), member_id()}    |
-    {info, info(), map()}                           |
+    {info, map()}                                   |
+    {member_info, member_id(), map()}               |
+    {session_info, member_id(), session_id, map()}  |
     {broadcast, msg()}                              |
     {destroyed, nkservice:error()}.
 
@@ -172,7 +174,7 @@ start(Srv, Config) ->
         {ok, _} ->
             {error, room_already_exists};
         not_found ->
-            case nkmedia_room:start(Srv, Config#{class=>sfu}) of
+            case nkmedia_room:start(Srv, Config2#{class=>sfu}) of
                 {ok, RoomId, _RoomPid} ->
                     {ok, Pid} = gen_server:start(?MODULE, [Config2], []),
                     {ok, RoomId, Pid};
@@ -231,11 +233,19 @@ destroy_member(Id, MemberId) ->
 
 
 %% Changes presenter's sessions and updates all viewers
--spec update_presenter(id(), member_id(), update_presenter_opts()) ->
+-spec update_publisher(id(), member_id(), update_publisher_opts()) ->
     {ok, session_id()} | {error, term()}.
 
-update_presenter(Id, MemberId, Config) ->
-    do_call(Id, {update_presenter, MemberId, Config}).
+update_publisher(Id, MemberId, Config) ->
+    do_call(Id, {update_publisher, MemberId, Config}).
+
+
+%% Changes presenter's sessions and updates all viewers
+-spec remove_publisher(id(), member_id()) ->
+    ok | {error, term()}.
+
+remove_publisher(Id, MemberId) ->
+    do_call(Id, {remove_publisher, MemberId}).
 
 
 %% @private
@@ -271,6 +281,14 @@ update_media(Id, MemberId, Media) ->
 
 
 %% @private
+-spec update_all_media(id(), media_opts()) ->
+    ok | {error, term()}.
+
+update_all_media(Id, Media) ->
+    do_call(Id, {update_all_media, Media}).
+
+
+%% @private
 -spec broadcast(id(), member_id(), msg()) ->
     {ok, msg_id()} | {error, term()}.
 
@@ -279,11 +297,27 @@ broadcast(Id, MemberId, Msg) when is_map(Msg) ->
 
 
 %% @private
--spec send_info(id(), info(), meta()) ->
+-spec send_room_info(id(), map()) ->
     ok | {error, term()}.
 
-send_info(Id, Info, Meta) when is_map(Meta) ->
-    do_cast(Id, {info, Info, Meta}).
+send_room_info(Id, Data) when is_map(Data) ->
+    do_cast(Id, {send_room_info, Data}).
+
+
+%% @private
+-spec send_session_info(id(), session_id(), map()) ->
+    ok | {error, term()}.
+
+send_session_info(Id, SessId, Data) when is_map(Data) ->
+    do_cast(Id, {send_session_info, SessId, Data}).
+
+
+%% @private
+-spec send_member_info(id(), member_id(), map()) ->
+    ok | {error, term()}.
+
+send_member_info(Id, MemberId, Data) when is_map(Data) ->
+    do_cast(Id, {send_member_info, MemberId, Data}).
 
 
 %% @private
@@ -328,8 +362,23 @@ get_all() ->
 
 
 %% @private Called from nkcollab_room_callbacks
+-spec media_session_event(id(), session_id(), nkmedia_session:event()) ->
+    ok | {error, nkservice:error()}.
+
+media_session_event(RoomId, SessId, {status, Class, Data}) ->
+    send_session_info(RoomId, SessId, Data#{class=>Class});
+
+media_session_event(_RoomId, _SessId, _Event) ->
+    ok.
+
+
+%% @private Called from nkcollab_room_callbacks
 -spec media_room_event(id(), nkmedia_room:event()) ->
     ok | {error, nkservice:error()}.
+
+media_room_event(RoomId, {status, Class, Data}) ->
+    lager:error("ROOM INFO: ~p, ~p", [Class, Data]),
+    send_room_info(RoomId, Data#{class=>Class});
 
 media_room_event(RoomId, {destroyed, Reason}) ->
     stop(RoomId, Reason);
@@ -368,7 +417,7 @@ init([#{room_id:=RoomId}=Room]) ->
     {ok, Pid} = nkmedia_room:register(RoomId, {nkcollab_room, RoomId, self()}),
     {ok, Media} = nkmedia_room:get_room(Pid),
     Room2 = maps:merge(Room, Media),
-    Room3 = Room2#{members=>#{}},
+    Room3 = Room2#{members=>#{}, status=>#{}},
     #{backend:=Backend, srv_id:=SrvId} = Room3,
     State1 = #state{
         id = RoomId, 
@@ -408,7 +457,7 @@ handle_call({create_member, Role, Config}, _From, State) ->
         {ok, SessId, Info2, State2} ->
             State3 = case Config of
                 #{register:=Link} ->
-                    links_add(Link, reg, State2);
+                    links_add(Link, {member, MemberId}, State2);
                 _ ->
                     State2
             end,
@@ -430,24 +479,36 @@ handle_call({destroy_member, MemberId}, _From, State) ->
             {reply, {error, member_not_found}, State}
     end;
 
-handle_call({update_presenter, MemberId, Config}, _From, State) ->
+handle_call({update_publisher, MemberId, Config}, _From, State) ->
     restart_timer(State),
     case get_info(MemberId, State) of
         {ok, Info} ->
+            OldSessId = maps:get(publish_session_id, Info, undefined),
             case add_session(publish, MemberId, Config, Info, State) of
                 {ok, SessId, _Info2, State2} ->
-                    State3 = update_all_listeners(MemberId, SessId, State2),
-                    State4 = case Info of
-                        #{publish_session_id:=OldSessId} ->
-                            stop_sessions(MemberId, [OldSessId], State3);
-                        _ ->
-                            State3
-                    end,
-                    % State5 = do_event({started_session, SessId, MemberId}, State4),
-                    {reply, {ok, SessId}, State4};
+                    Self = self(),
+                    spawn_link(
+                        fun() ->
+                            timer:sleep(500),
+                            gen_server:cast(Self,
+                                            {switch_all_listeners, MemberId, OldSessId})
+                        end),
+                    {reply, {ok, SessId}, State2};
                 {error, Error} ->
                     {reply, {error, Error}, State}
             end;
+        not_found ->
+            {reply, {error, member_not_found}, State}
+    end;
+
+handle_call({remove_publisher, MemberId}, _From, State) ->
+    restart_timer(State),
+    case get_info(MemberId, State) of
+        {ok, #{publish_session_id:=SessId}=Info} ->
+            State2 = remove_session(SessId, MemberId, Info, State),
+            {reply, ok, State2};
+        {ok, _} ->
+            {reply, {error, member_is_not_publisher}, State};
         not_found ->
             {reply, {error, member_not_found}, State}
     end;
@@ -456,7 +517,7 @@ handle_call({add_listener, MemberId, PresenterId, Config}, _From, State) ->
     restart_timer(State),
     case get_info(MemberId, State) of
         {ok, Info} ->
-            case has_presenter(Info, PresenterId) of
+            case has_this_presenter(Info, PresenterId) of
                 {true, _SessId} ->
                     {reply, {error, already_listening}, State};
                 false ->
@@ -478,7 +539,7 @@ handle_call({remove_listener, MemberId, PresenterId}, _From, State) ->
     restart_timer(State),
     case get_info(MemberId, State) of
         {ok, Info} ->
-            State2 = case has_presenter(Info, PresenterId) of
+            State2 = case has_this_presenter(Info, PresenterId) of
                 {true, SessId} ->
                     remove_session(SessId, MemberId, Info, State);
                 false ->
@@ -494,27 +555,34 @@ handle_call({update_meta, MemberId, Meta}, _From, State) ->
         {ok, Info} ->
             BaseMeta = maps:get(meta, Info, #{}),
             Meta2 = maps:merge(BaseMeta, Meta),
-            State2 = store_info(MemberId, Info#{meta=>Meta2}, State),
-            State3 = do_event({updated_meta, MemberId, Meta}, State2),
+            Info2 = Info#{meta=>Meta2},
+            State2 = store_info(MemberId, Info2, State),
+            State3 = do_event({updated_member, MemberId, Info2}, State2),
             {reply, ok, State3};
         not_found ->
             {reply, {error, member_not_found}, State}
     end;
 
 handle_call({update_media, MemberId, Media}, _From, State) -> 
-    Reply = case get_info(MemberId, State) of
-        {ok, #{publish_session_id:=SessId}} ->
-            case nkmedia_session:cmd(SessId, update_media, Media) of
-                {ok, _} ->
-                    ok;
-                {error, Error} ->
-                    {error, Error}
-            end;
-        _ ->
-            {reply, {error, member_not_found}, State}
-    end,
-    State2 = do_event({updated_media, MemberId, Media}, State),
-    {reply, Reply, State2};
+    case do_update_media(MemberId, Media, State) of
+        {ok, State2} ->
+            {reply, ok, State2};
+        {error, Error} ->
+            {reply, {error, Error}, State}
+    end;
+
+handle_call({update_all_media, Media}, _From, #state{room=Room}=State) -> 
+    #{members:=Members} = Room,
+    State2 = lists:foldl(
+        fun(MemberId, Acc) ->
+            case do_update_media(MemberId, Media, Acc) of
+                {ok, Acc2} -> Acc2;
+                _ -> Acc
+            end
+        end,
+        State,
+        maps:keys(Members)),
+    {reply, ok, State2};
 
 handle_call(get_room, _From, #state{room=Room}=State) -> 
     {reply, {ok, Room}, State};
@@ -564,8 +632,24 @@ handle_call(Msg, From, State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 %% @private
-handle_cast({send_info, Info, Meta}, State) ->
-    {noreply, do_event({info, Info, Meta}, State)};
+handle_cast({send_room_info, Data}, State) ->
+    {noreply, do_event({info, Data}, State)};
+
+handle_cast({send_member_info, MemberId, Data}, State) ->
+    case get_info(MemberId, State) of
+        {ok, _} ->
+            {noreply, do_event({member_info, MemberId, Data}, State)};
+        _ ->
+            {noreply, State}
+    end;
+
+handle_cast({send_session_info, SessId, Data}, State) ->
+    case links_get(SessId, State) of
+        {ok, {session, MemberId}} ->
+            {noreply, do_event({session_info, MemberId, SessId, Data}, State)};
+        _ ->
+            {noreply, State}
+    end;
 
 handle_cast({register, Link}, State) ->
     ?LLOG(info, "proc registered (~p)", [Link], State),
@@ -578,6 +662,31 @@ handle_cast({unregister, Link}, State) ->
 
 % handle_cast({media_room_event, Event}, State) ->
 %     do_media_room_event(Event, State);
+
+handle_cast({set_status, Key, Data}, #state{room=Room}=State) ->
+    State2 = restart_timer(State),
+    Status1 = maps:get(status, Room),
+    Status2 = maps:put(Key, Data, Status1),
+    State3 = State2#state{room=?ROOM(#{status=>Status2}, Room)},
+    {noreply, do_event({status, Key, Data}, State3)};
+
+handle_cast({switch_all_listeners, MemberId, OldSessId}, State) ->
+    case get_info(MemberId, State) of
+        {ok, #{publish_session_id:=NewSessId}} ->
+            State2 = switch_all_listeners(MemberId, NewSessId, State),
+            State3 = case OldSessId of
+                undefined ->
+                    State2;
+                _ ->
+                    % stop_sessions(MemberId, [OldSessId], State2);
+                    State2
+            end,
+            {noreply, State3};
+        _ ->
+            ?LLOG(warning, "received switch_all_listeners for invalid publisher", 
+                  [], State),
+            {noreply, State}
+    end;
 
 handle_cast({stop, Reason}, State) ->
     ?LLOG(info, "external stop: ~p", [Reason], State),
@@ -599,7 +708,7 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
         {ok, Link, {member, MemberId}, State2} ->
             case get_info(MemberId, State2) of
                 {ok, Info} ->
-                    ?LLOG(notice, "member ~p down (~p)", [Link, MemberId], State2),
+                    ?LLOG(notice, "member reg ~p down (~p)", [Link, MemberId], State2),
                     State3 = destroy_member(MemberId, Info, State2),
                     {noreply, State3};
                 not_found ->
@@ -615,9 +724,15 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
                     {noreply, State}
             end;
         {ok, Link, reg, State2} ->
-            ?LLOG(notice, "stopping because of reg '~p' down (~p)",
-                  [Link, Reason], State2),
-            do_stop(registered_down, State2);
+            #state{id=Id} = State2,
+            case handle(nkcollab_room_reg_down, [Id, Link, Reason], State2) of
+                {ok, State3} ->
+                    {noreply, State3};
+                {stop, Reason2, State3} ->
+                    ?LLOG(notice, "stopping because of reg '~p' down (~p)",
+                          [Link, Reason2], State2),
+                    do_stop(Reason2, State3)
+            end;
         not_found ->
             handle(nkcollab_room_handle_info, [Msg], State)
     end;
@@ -785,6 +900,7 @@ destroy_member(MemberId, Info, #state{room=Room}=State) ->
 
 remove_session(SessId, MemberId, Info, State) ->
     State2 = stop_sessions(MemberId, [SessId], State),
+    #{role:=Role} = Info,
     Info2 = case Info of
         #{publish_session_id:=SessId} ->
             maps:remove(publish_session_id, Info);
@@ -797,69 +913,42 @@ remove_session(SessId, MemberId, Info, State) ->
                     maps:put(listen_session_ids, Ids2, Info)
             end
     end,
-    Role = case Info2 of
+    Role2 = case Info2 of
         #{publish_session_id:=_} -> presenter;
         #{listen_session_ids:=_} -> viewer;
         _ -> removed
     end,
-    case Role of
+    case Role2 of
         removed ->
             destroy_member(MemberId, Info2, State);
+        Role ->
+            store_info(MemberId, Info2, State2);
         _ ->
-            Info3 = Info2#{role=>Role},
-            store_info(MemberId, Info3, State2)
+            Info3 = Info2#{role=>Role2},
+            State3 = store_info(MemberId, Info3, State2),
+            do_event({updated_member, MemberId, Info3}, State3)
     end.
 
 
 %% @private
-update_all_listeners(PresenterId, PublishId, #state{room=Room}=State) ->
+switch_all_listeners(PresenterId, PublishId, #state{room=Room}=State) ->
     #{members:=Members} = Room,
-    update_all_listeners(maps:to_list(Members), PresenterId, PublishId, State).
+    switch_all_listeners(maps:to_list(Members), PresenterId, PublishId, State).
 
 
 %% @private
-update_all_listeners([], _PresenterId, _PublishId, State) ->
+switch_all_listeners([], _PresenterId, _PublishId, State) ->
     State;
 
-update_all_listeners([{_MemberId, Info}|Rest], PresenterId, PublishId, State) ->
-    case has_presenter(Info, PresenterId) of
+switch_all_listeners([{_MemberId, Info}|Rest], PresenterId, PublishId, State) ->
+    State2 = case has_this_presenter(Info, PresenterId) of
         {true, SessId} ->
-                switch_listener(SessId, PublishId);
+            switch_listener(SessId, PublishId),
+            State;
         false ->
-                ok
+            State
     end,
-    update_all_listeners(Rest, PresenterId, PublishId, State).
-
-
-
-% % %% @private
-% do_media_room_event({destroyed, Reason}, State) ->
-%     ?LLOG(info, "media room stopped", [], State),
-%     do_stop(Reason, State);
-
-% do_media_room_event({started_member, SessId, _Info}, State) ->
-%     case links_get(SessId, State) of
-%         {ok, {session, _MemberId}} ->
-%             ok;
-%         not_found ->
-%             ?LLOG(warning, "received start_member for unknown member ~s", 
-%                   [SessId], State)
-%     end,
-%     {noreply, State};
-
-% do_media_room_event({stopped_member, SessId, _Info}, State) ->
-%     case links_get(SessId, State) of
-%         {ok, {session, MemberId}} ->
-%             ?LLOG(warning, "received stopped_member for current member ~p", 
-%                   [MemberId], State);
-%         not_found ->
-%             ok
-%     end,
-%     {noreply, State};
-
-% do_media_room_event(Event, State) ->
-%     ?LLOG(warning, "unexpected room event ~p", [Event], State),
-%     {noreply, State}.
+    switch_all_listeners(Rest, PresenterId, PublishId, State2).
 
 
 %% @private
@@ -880,9 +969,9 @@ do_stop_all(#state{room=#{members:=Members}}=State) ->
 do_event(Event, #state{id=Id}=State) ->
     ?LLOG(info, "sending 'event': ~p", [Event], State),
     State2 = do_event_regs(Event, State),
-    % State3 = do_event_members(Event, State2),
-    {ok, State3} = handle(nkcollab_room_event, [Id, Event], State2),
-    State3.
+    State3 = do_event_members(Event, State2),
+    {ok, State4} = handle(nkcollab_room_event, [Id, Event], State3),
+    State4.
 
 
 %% @private
@@ -899,18 +988,36 @@ do_event_regs(Event, #state{id=Id}=State) ->
         State).
 
 
-% %% @private
-% do_event_members(Event, #state{id=Id}=State) ->
-%     links_fold(
-%         fun(Link, {member, MemberId}, Acc) ->
-%             {ok, Acc2} = 
-%                 handle(nkcollab_room_member_event, [Id, Link, MemberId, Event], Acc),
-%                 Acc2;
-%             (_Link, _Data, Acc) ->
-%                 Acc
-%         end,
-%         State,
-%         State).
+%% @private
+do_event_members(Event, #state{id=Id}=State) ->
+    links_fold(
+        fun(Link, {member, MemberId}, Acc) ->
+            {ok, Acc2} = 
+                handle(nkcollab_room_member_event, [Id, Link, MemberId, Event], Acc),
+                Acc2;
+            (_Link, _Data, Acc) ->
+                Acc
+        end,
+        State,
+        State).
+
+
+
+%% @private
+do_update_media(MemberId, Media, State) ->
+    case get_info(MemberId, State) of
+        {ok, #{publish_session_id:=SessId}} ->
+            case nkmedia_session:cmd(SessId, update_media, Media) of
+                {ok, _} ->
+                    {ok, do_event({updated_media, MemberId, Media}, State)};
+                {error, Error} ->
+                    {error, Error}
+            end;
+        {ok, _} ->
+            {error, member_is_not_publisher};
+        _ ->
+            {error, member_not_found}
+    end.
 
 
 %% @private Get presenter's publishing session
@@ -950,7 +1057,7 @@ store_info(MemberId, Info, #state{room=Room}=State) ->
 
 
 %% @private
-has_presenter(#{listen_session_ids:=Ids}, PresenterId) ->
+has_this_presenter(#{listen_session_ids:=Ids}, PresenterId) ->
     case lists:keyfind(PresenterId, 2, maps:to_list(Ids)) of
         {SessId, PresenterId} ->
             {true, SessId};
@@ -958,7 +1065,7 @@ has_presenter(#{listen_session_ids:=Ids}, PresenterId) ->
             false
     end;
 
-has_presenter(_Info, _PresenterId) ->
+has_this_presenter(_Info, _PresenterId) ->
     false.
 
 %% @private
@@ -974,6 +1081,7 @@ stop_sessions(MemberId, [SessId|Rest], State) ->
 
 %% @private
 switch_listener(SessId, PublishId) ->
+    lager:error("SWITCH: ~p -> ~p", [SessId, PublishId]),
     nkmedia_session:cmd(SessId, set_type, #{type=>listen, publisher_id=>PublishId}).
 
 
@@ -993,9 +1101,9 @@ links_add(Id, Data, Pid, #state{links=Links}=State) ->
     State#state{links=nklib_links:add(Id, Data, Pid, Links)}.
 
 
-% %% @private
-% links_get(Link, #state{links=Links}) ->
-%     nklib_links:get_value(Link, Links).
+%% @private
+links_get(Link, #state{links=Links}) ->
+    nklib_links:get_value(Link, Links).
 
 
 %% @private

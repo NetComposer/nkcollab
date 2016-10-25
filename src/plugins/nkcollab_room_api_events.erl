@@ -52,9 +52,9 @@ event(RoomId, {stopped_member, MemberId, Info}, Room) ->
     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
     send_event(RoomId, stopped_member, Info2#{member_id=>MemberId}, Room);
 
-event(RoomId, {started_session, SessId, MemberId}, Room) ->
-    Data = #{member_id=>MemberId, session_id=>SessId},
-    send_event(RoomId, started_session, Data, Room);
+% event(RoomId, {started_session, SessId, MemberId}, Room) ->
+%     Data = #{member_id=>MemberId, session_id=>SessId},
+%     send_event(RoomId, started_session, Data, Room);
 
 event(RoomId, {stopped_session, SessId, MemberId}, Room) ->
     Data = #{member_id=>MemberId, session_id=>SessId},
@@ -63,11 +63,19 @@ event(RoomId, {stopped_session, SessId, MemberId}, Room) ->
 event(RoomId, {broadcast, Msg}, Room) ->
     send_event(RoomId, broadcast, Msg, Room);
 
-event(RoomId, {info, Info, Meta}, Room) ->
-    send_event(RoomId, info, Meta#{info=>Info}, Room);
+event(RoomId, {room_info, Meta}, Room) ->
+    send_event(RoomId, room_info, Meta, Room);
 
-event(RoomId, {updated_meta, MemberId, Meta}, Room) ->
-    send_event(RoomId, updated_meta, #{member_id=>MemberId, meta=>Meta}, Room);
+event(RoomId, {member_info, MemberId, Meta}, Room) ->
+    send_event(RoomId, member_info, Meta#{member_id=>MemberId}, Room);
+
+event(RoomId, {session_info, MemberId, SessId, Meta}, Room) ->
+    Meta2 = Meta#{member_id=>MemberId, session_id=>SessId},
+    send_event(RoomId, session_info, Meta2, Room);
+
+event(RoomId, {updated_member, MemberId, Info}, Room) ->
+    Info2 = nkcollab_room_api_syntax:get_member_info(Info),
+    send_event(RoomId, updated_member, Info2#{member_id=>MemberId}, Room);
 
 event(RoomId, {updated_media, MemberId, Media}, Room) ->
     send_event(RoomId, updated_media, #{member_id=>MemberId, media=>Media}, Room);
