@@ -326,47 +326,12 @@ sip_bye(Req, _Call) ->
 %% @private
 %% If call has type 'nkcollab_sip' we will capture it
 nkcollab_call_expand({nkcollab_sip, Id}=Dest, Acc, Call) ->
-    {continue, [Dest, Acc++expand(Id), Call]};
+    {continue, [Dest, Acc++expand(Id, Call), Call]};
         
 nkcollab_call_expand({nkcollab_any, Id}=Dest, Acc, Call) ->
-    {continue, [Dest, Acc++expand(Id), Call]};
+    {continue, [Dest, Acc++expand(Id, Call), Call]};
 
 nkcollab_call_expand(_Dest, _Acc, _Call) ->
-    continue.
-
-
-
-%% @private
-nkcollab_call_expand(Callee, Type, Acc, Call) when Type==sip; Type==all ->
-    #{srv_id:=SrvId} = Call,
-    Config = nkservice_srv:get_item(SrvId, config_nkcollab_sip),
-    #sip_config{invite_to_not_registered=DoExt} = Config,
-    Uris1 = case DoExt of
-        true ->
-            % We allowed calling to not registered SIP endpoints
-            case nklib_parse:uris(Callee) of
-                error -> 
-                    lager:info("Invalid SIP URI: ~p", [Callee]),
-                    [];
-                Parsed -> 
-                    [U || #uri{scheme=S}=U <- Parsed, S==sip orelse S==sips]
-            end;
-        false ->
-            []
-    end,
-    {User, Domain} = case binary:split(Callee, <<"@">>) of
-        [User0, Domain0] -> {User0, Domain0};
-        [User0] -> {User0, Config#sip_config.domain}
-    end,
-    Uris2 = nksip_registrar:find(SrvId, sip, User, Domain) ++
-            nksip_registrar:find(SrvId, sips, User, Domain),
-    Dests= [
-        #{dest=>{nkcollab_sip, U}, session_config=>#{sdp_type=>rtp}} 
-        || U <- Uris1++Uris2
-    ],
-    {continue, [Callee, Type, Acc++Dests, Call]};
-
-nkcollab_call_expand(_Callee, _Type, _Acc, _Call) ->
     continue.
 
 
@@ -467,9 +432,9 @@ expand(Dest, Call) ->
     Uris1 = case DoExt of
         true ->
             % We allowed calling to not registered SIP endpoints
-            case nklib_parse:uris(Callee) of
+            case nklib_parse:uris(Dest) of
                 error -> 
-                    lager:info("Invalid SIP URI: ~p", [Callee]),
+                    lager:info("Invalid SIP URI: ~p", [Dest]),
                     [];
                 Parsed -> 
                     [U || #uri{scheme=S}=U <- Parsed, S==sip orelse S==sips]
@@ -477,7 +442,7 @@ expand(Dest, Call) ->
         false ->
             []
     end,
-    {User, Domain} = case binary:split(Callee, <<"@">>) of
+    {User, Domain} = case binary:split(Dest, <<"@">>) of
         [User0, Domain0] -> {User0, Domain0};
         [User0] -> {User0, Config#sip_config.domain}
     end,
