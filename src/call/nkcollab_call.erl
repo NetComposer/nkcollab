@@ -19,15 +19,6 @@
 %% -------------------------------------------------------------------
 
 %% @doc Call management
-%%
-%% Typical call process:
-%% - A session is started
-%% - A call is started, linking it with the session (using session_id)
-%%   If the session goes down, the call is stopped with session_failed
-%% - The call calls nkcollab_call_resolve and nkcollab_call_invite
-%% 
-
-
 -module(nkcollab_call).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
@@ -61,6 +52,16 @@
 
 -type id() :: binary().
 
+-type dest() :: term().
+
+-type dest_ext() ::
+    #{
+        dest => dest(),
+        wait => integer(),                      %% secs
+        ring => integer(),
+        sdp_type => webrtc | rtp
+    }.
+
 -type caller() :: term().
 
 -type callee() :: term().
@@ -69,20 +70,20 @@
 
 -type callee_session_id() :: session_id().
 
--type call_type() :: user | session | atom(). % Also nkcollab_verto, ...
+% -type call_type() :: user | session | atom(). % Also nkcollab_verto, ...
 
 -type session_id() :: nkmedia_session:id().
 
 -type config() ::
     #{
         call_id => id(),                        % Optional
-        type => call_type(),                    % Optional, used in resolvers
-        caller => caller(),                     % Caller info
+        % type => call_type(),                    % Optional, used in resolvers
         backend => nkcollab:backend(),
-        no_offer_trickle_ice => boolean(),          % Buffer candidates and insert in SDP
+        no_offer_trickle_ice => boolean(),      % Buffer candidates and insert in SDP
         no_answer_trickle_ice => boolean(),       
         trickle_ice_timeout => integer(),
         sdp_type => nkcollab:sdp_type(),
+        caller => caller(),                     % Caller info
         caller_link => nklib:link(),
         register => nklib:link(),
         user_id => nkservice:user_id(),             % Informative only
@@ -94,6 +95,7 @@
     config() |
     #{
         srv_id => nkservice:id(),
+        dest => dest(),
         callee => callee(),
         caller_session_id => session_id(),      % Generated if not included
         callee_link => nklib:link(),
@@ -107,16 +109,6 @@
     {hangup, nkservice:error()}.
 
 
--type dest() :: term().
-
--type dest_ext() ::
-    #{
-        dest => dest(),
-        wait => integer(),                      %% secs
-        ring => integer(),
-        sdp_type => webrtc | rtp
-    }.
-
 
 
 %% ===================================================================
@@ -124,16 +116,16 @@
 %% ===================================================================
 
 %% @doc Starts a new call to a callee
-%% - nkcollab_call_resolve is called to get destinations from callee
+%% - nkcollab_call_expand is called to get destinations from callee
 %% - once we have all destinations, nkcollab_call_invite is called for each
 %% - callees must call ringing, accepted, rejected
--spec start(nkservice:id(), callee(), config()) ->
+-spec start(nkservice:id(), dest(), config()) ->
     {ok, id(), pid()}.
 
-start(Srv, Callee, Config) ->
+start(Srv, Dest, Config) ->
     case nkservice_srv:get_srv_id(Srv) of
         {ok, SrvId} ->
-            Config2 = Config#{srv_id=>SrvId, callee=>Callee},
+            Config2 = Config#{srv_id=>SrvId, dest=>Dest},
             {CallId, Config3} = nkmedia_util:add_id(call_id, Config2, call),
             {ok, Pid} = gen_server:start(?MODULE, [Config3], []),
             {ok, CallId, Pid};
@@ -291,7 +283,7 @@ get_call(CallId) ->
     callee_session_id :: session_id(),
     invites = [] :: [#invite{}],
     pos = 0 :: integer(),
-    stop_sent = false :: boolean(),
+    stop_reason = false :: false | nkservice:error(),
     call :: call()
 }).
 
@@ -300,7 +292,7 @@ get_call(CallId) ->
 -spec init(term()) ->
     {ok, tuple()}.
 
-init([#{srv_id:=SrvId, call_id:=CallId, callee:=Callee}=Call]) ->
+init([#{srv_id:=SrvId, call_id:=CallId, dest:=Dest}=Call]) ->
     nklib_proc:put(?MODULE, CallId),
     nklib_proc:put({?MODULE, CallId}),  
     CallerLink = maps:get(caller_link, Call, undefined),
@@ -311,7 +303,7 @@ init([#{srv_id:=SrvId, call_id:=CallId, callee:=Callee}=Call]) ->
         caller_link = CallerLink,
         call = Call
     },
-    ?LLOG(info, "starting to ~p (~p)", [Callee, self()], State1),
+    ?LLOG(info, "starting to ~p (~p)", [Dest, self()], State1),
     State2 = case CallerLink of
         undefined ->
             State1;
@@ -562,9 +554,23 @@ code_change(_OldVsn, State, _Extra) ->
     ok.
 
 terminate(Reason, State) ->
-    {stop, normal, State2} = do_hangup(process_down, State),
-    catch handle(nkcollab_call_terminate, [Reason], State2),
-    ?LLOG(info, "stopped: ~p", [Reason], State2).
+    #state{caller_session_id=Caller, callee_session_id=Callee, stop_reason=Stop} = State,
+    Reason = case Stop of
+        false ->
+            Ref = nklib_util:uid(),
+            ?LLOG(notice, "terminate error ~s: ~p", [Ref, Reason], State),
+            {internal_error, Ref};
+        _ ->
+            Stop
+    end,
+    stop_session(Caller, Reason),
+    stop_session(Callee, Reason),
+    State2 = cancel_all(State),
+    State3 = event({hangup, Reason}, State2),
+    {ok, _State4} = handle(nkcollab_call_terminate, [Reason], State3),
+    % Wait for events
+    timer:sleep(100),
+    ok.
 
 
 % ===================================================================
@@ -572,13 +578,12 @@ terminate(Reason, State) ->
 %% ===================================================================
 
 %% @private
-do_start(#state{call=#{callee:=Callee}=Call}=State) ->
-    Type = maps:get(type, Call, all),
-    {ok, ExtDests, State2} = handle(nkcollab_call_resolve, [Callee, Type, []], State),
+do_start(#state{call=#{dest:=Dest}}=State) ->
+    {ok, ExtDests, State2} = handle(nkcollab_call_expand, [Dest, []], State),
     State3 = launch_invites(ExtDests, State2),
     #state{invites=Invs} = State3,
-    Dests = [Dest || #invite{dest=Dest} <- Invs],
-    ?LLOG(notice, "resolved invites for ~p: ~p", [Callee, Dests], State),
+    Dests = [D2 || #invite{dest=D2} <- Invs],
+    ?LLOG(notice, "resolved invites for ~p: ~p", [Dest, Dests], State),
     {noreply, State3}.
 
 %% @private Generate data and launch messages
@@ -778,17 +783,8 @@ do_cancelled(#invite{link=Link, dest=Dest}=Inv, #state{id=CallId}=State) ->
 
 
 %% @private
-do_hangup(_Reason, #state{stop_sent=true}=State) ->
-    {stop, normal, State#state{stop_sent=true}};
-
-do_hangup(Reason, #state{stop_sent=false}=State) ->
-    #state{caller_session_id=Caller, callee_session_id=Callee} = State,
-    stop_session(Caller, Reason),
-    stop_session(Callee, Reason),
-    State2 = cancel_all(State),
-    timer:sleep(100),                                       % Allow events
-    State3 = event({hangup, Reason}, State2),
-    do_hangup(Reason, State3#state{stop_sent=true}).
+do_hangup(Reason, State) ->
+    {stop, normal, State#state{stop_reason=Reason}}.
 
 
 %% @private

@@ -24,7 +24,7 @@
 
 -export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
 -export([nkcollab_call_init/2, nkcollab_call_terminate/2, 
-         nkcollab_call_resolve/4, nkcollab_call_invite/6, nkcollab_call_cancelled/3, 
+         nkcollab_call_expand/3, nkcollab_call_invite/6, nkcollab_call_cancelled/3, 
          nkcollab_call_answer/6, nkcollab_call_candidate/4,
          nkcollab_call_event/3, nkcollab_call_reg_event/4, 
          nkcollab_call_handle_call/3, nkcollab_call_handle_cast/2, 
@@ -125,11 +125,11 @@ nkcollab_call_terminate(_Reason, Call) ->
 %% The default implementation will look for types 'user' and 'session', adding 
 %% {nkcollab_api, {user|session, pid()}} destinations
 %% Then nkcollab_call_invite must send the real invitations
--spec nkcollab_call_resolve(callee(), nkcollab_call:call_type(), [dest_ext()], call()) ->
+-spec nkcollab_call_expand(dest(), [dest_ext()], call()) ->
     {ok, [dest_ext()], call()} | continue().
 
-nkcollab_call_resolve(Callee, Type, DestExts, Call) ->
-    nkcollab_call_api:resolve(Callee, Type, DestExts, Call).
+nkcollab_call_expand(Callee, DestExts, Call) ->
+    nkcollab_call_api:resolve(Callee, DestExts, Call).
 
 
 %% @doc Called for each defined destination to be invited

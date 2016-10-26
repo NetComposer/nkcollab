@@ -30,7 +30,7 @@
          nkcollab_sip_invite_answered/2]).
 -export([sip_get_user_pass/4, sip_authorize/3]).
 -export([sip_register/2, sip_invite/2, sip_reinvite/2, sip_cancel/3, sip_bye/2]).
--export([nkcollab_call_resolve/4, nkcollab_call_invite/6, nkcollab_call_cancelled/3,
+-export([nkcollab_call_expand/3, nkcollab_call_invite/6, nkcollab_call_cancelled/3,
          nkcollab_call_answer/6, nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
@@ -324,7 +324,20 @@ sip_bye(Req, _Call) ->
 %% ===================================================================
 
 %% @private
-nkcollab_call_resolve(Callee, Type, Acc, Call) when Type==sip; Type==all ->
+%% If call has type 'nkcollab_sip' we will capture it
+nkcollab_call_expand({nkcollab_sip, Id}=Dest, Acc, Call) ->
+    {continue, [Dest, Acc++expand(Id), Call]};
+        
+nkcollab_call_expand({nkcollab_any, Id}=Dest, Acc, Call) ->
+    {continue, [Dest, Acc++expand(Id), Call]};
+
+nkcollab_call_expand(_Dest, _Acc, _Call) ->
+    continue.
+
+
+
+%% @private
+nkcollab_call_expand(Callee, Type, Acc, Call) when Type==sip; Type==all ->
     #{srv_id:=SrvId} = Call,
     Config = nkservice_srv:get_item(SrvId, config_nkcollab_sip),
     #sip_config{invite_to_not_registered=DoExt} = Config,
@@ -353,7 +366,7 @@ nkcollab_call_resolve(Callee, Type, Acc, Call) when Type==sip; Type==all ->
     ],
     {continue, [Callee, Type, Acc++Dests, Call]};
 
-nkcollab_call_resolve(_Callee, _Type, _Acc, _Call) ->
+nkcollab_call_expand(_Callee, _Type, _Acc, _Call) ->
     continue.
 
 
@@ -446,4 +459,32 @@ nkmedia_session_reg_event(_SessId, _Link, _Event, _Session) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+expand(Dest, Call) ->
+    #{srv_id:=SrvId} = Call,
+    Config = nkservice_srv:get_item(SrvId, config_nkcollab_sip),
+    #sip_config{invite_to_not_registered=DoExt} = Config,
+    Uris1 = case DoExt of
+        true ->
+            % We allowed calling to not registered SIP endpoints
+            case nklib_parse:uris(Callee) of
+                error -> 
+                    lager:info("Invalid SIP URI: ~p", [Callee]),
+                    [];
+                Parsed -> 
+                    [U || #uri{scheme=S}=U <- Parsed, S==sip orelse S==sips]
+            end;
+        false ->
+            []
+    end,
+    {User, Domain} = case binary:split(Callee, <<"@">>) of
+        [User0, Domain0] -> {User0, Domain0};
+        [User0] -> {User0, Config#sip_config.domain}
+    end,
+    Uris2 = nksip_registrar:find(SrvId, sip, User, Domain) ++
+            nksip_registrar:find(SrvId, sips, User, Domain),
+    [
+        #{dest=>{nkcollab_sip, U}, session_config=>#{sdp_type=>rtp}} 
+        || U <- Uris1++Uris2
+    ].
 

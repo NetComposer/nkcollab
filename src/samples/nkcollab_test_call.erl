@@ -122,17 +122,7 @@ start() ->
         log_level => debug,
         api_gelf_server => "c2.netc.io"
     },
-    % export NKCOLLAB_CERTS="/etc/letsencrypt/live/casa.carlosj.net"
-    Spec2 = case os:getenv("NKCOLLAB_CERTS") of
-        false ->
-            Spec1;
-        Dir ->
-            Spec1#{
-                tls_certfile => filename:join(Dir, "cert.pem"),
-                tls_keyfile => filename:join(Dir, "privkey.pem"),
-                tls_cacertfile => filename:join(Dir, "fullchain.pem")
-            }
-    end,
+    Spec2 = nkmedia_util:add_certs(Spec1),
     nkservice:start(test, Spec2).
 
 

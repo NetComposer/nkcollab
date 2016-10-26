@@ -451,7 +451,7 @@ start_viewer(Num, RoomId, Presenter, WsPid, Opts) ->
                 meta => #{module=>nkcollab_test_room, type=>viewer},
                 presenter_id => Presenter
             },
-            case cmd(WsPid, start_viewer, Opts2) of
+            case cmd(WsPid, create_viewer, Opts2) of
                 {ok, 
                     #{
                         <<"member_id">> := _MemberId, 

@@ -30,7 +30,7 @@
          nkcollab_janus_handle_call/3, nkcollab_janus_handle_cast/2,
          nkcollab_janus_handle_info/2]).
 -export([error_code/1]).
--export([nkcollab_call_resolve/4, nkcollab_call_invite/6, 
+-export([nkcollab_call_expand/3, nkcollab_call_invite/6, 
          nkcollab_call_answer/6, nkcollab_call_cancelled/3, 
          nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
@@ -286,14 +286,13 @@ nkmedia_session_reg_event(_CallId, _Link, _Event, _Call) ->
 
 %% @private
 %% If call has type 'nkcollab_janus' we will capture it
-nkcollab_call_resolve(Callee, Type, Acc, Call) when Type==janus; Type==all ->
-    Dest = [
-        #{dest=>{nkcollab_janus, Pid}, session_config=>#{no_offer_trickle_ice=>true}}
-        || Pid <- nkcollab_janus:find_user(Callee)
-    ],
-    {continue, [Callee, Type, Acc++Dest, Call]};
+nkcollab_call_expand({nkcollab_janus, Id}=Dest, Acc, Call) ->
+    {continue, [Dest, Acc++expand(Id), Call]};
         
-nkcollab_call_resolve(_Callee, _Type, _Acc, _Call) ->
+nkcollab_call_expand({nkcollab_any, Id}=Dest, Acc, Call) ->
+    {continue, [Dest, Acc++expand(Id), Call]};
+
+nkcollab_call_expand(_Dest, _Acc, _Call) ->
     continue.
 
 
@@ -351,6 +350,13 @@ nkcollab_call_reg_event(_CallId, _Link, _Event, _Call) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+%% @private
+expand(Dest) ->
+    [
+        #{dest=>{nkcollab_janus, Pid}, session_config=>#{no_offer_trickle_ice=>true}}
+        || Pid <- nkcollab_janus:find_user(Dest)
+    ].
 
 
 parse_listen(_Key, [{[{_, _, _, _}|_], Opts}|_]=Multi, _Ctx) when is_map(Opts) ->
