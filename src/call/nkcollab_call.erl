@@ -23,8 +23,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([start/3, start2/3, ringing/2, ringing/3, accepted/4, candidate/3, rejected/2]).
--export([hangup/2, hangup_all/0]).
+-export([start/3, start_type/4, hangup/2, hangup_all/0]).
+-export([ringing/2, ringing/3, accepted/4, candidate/3, rejected/2]).
 -export([register/2, unregister/2, session_event/3]).
 -export([find/1, get_all/0, get_call/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3,
@@ -59,7 +59,7 @@
         dest => dest(),
         wait => integer(),                      %% secs
         ring => integer(),
-        sdp_type => webrtc | rtp
+        session_config => map()
     }.
 
 -type caller() :: term().
@@ -77,7 +77,6 @@
 -type config() ::
     #{
         call_id => id(),                        % Optional
-        % type => call_type(),                    % Optional, used in resolvers
         backend => nkcollab:backend(),
         no_offer_trickle_ice => boolean(),      % Buffer candidates and insert in SDP
         no_answer_trickle_ice => boolean(),       
@@ -104,9 +103,14 @@
 
 
 -type event() :: 
-    {ringing, callee()} | 
-    {accepted, callee()} | 
-    {hangup, nkservice:error()}.
+    {ringing, callee()}                                                     | 
+    {accepted, callee()}                                                    | 
+    {hangup, nkservice:error()}                                             |
+    {session_candidate, session_id(), nkmedia:candidate(), nklib:link()}    |
+    {session_candidate_end, session_id(), nklib:link()}                     |
+    {session_answer, session_id(), nkmedia:answer(), nklib:link()}          |
+    {session_status, session_id(), atom(), map(), nklib:link()}             |
+    {session_cancelled, session_id(), nklib:link()}.
 
 
 
@@ -141,28 +145,28 @@ start(Srv, Dest, Config) ->
 %% - sip:XXX the backend is set to janus, and sdp_type is fixed (for caller session)
 %% -
 %%
--spec start2(nkservice:id(), callee(), config()) ->
+-spec start_type(nkservice:id(), atom(), dest(), config()) ->
     {ok, id(), pid()}.
 
-start2(Srv, Callee, Config) ->
-    case Callee of
-        <<"p2p", Callee2/binary>> ->
+start_type(Srv, Type, Dest, Config) ->
+    case Dest of
+        <<"p2p", Dest2/binary>> ->
             Config2 = Config#{backend=>p2p};
-        <<"sip", Callee2/binary>> ->
+        <<"sip", Dest2/binary>> ->
             Config2 = Config#{backend=>nkmedia_janus, sdp_type=>rtp};
-        <<"fs", Callee2/binary>> ->
+        <<"fs", Dest2/binary>> ->
             Config2 = Config#{backend=>nkmedia_fs};
-        <<"kms", Callee2/binary>> ->
+        <<"kms", Dest2/binary>> ->
             Config2 = Config#{backend=>nkmedia_kms};
-        Callee2 ->
+        Dest2 ->
             Config2 = Config#{backend=>?DEFAULT_BACKEND}
     end,
-    case Callee2 of
-        <<":", Callee3/binary>> -> ok;
-        <<"-", Callee3/binary>> -> ok;
-        Callee3 -> ok
+    case Dest2 of
+        <<":", Dest3/binary>> -> ok;
+        <<"-", Dest3/binary>> -> ok;
+        Dest3 -> ok
     end,
-    start(Srv, Callee3, Config2).
+    start(Srv, {Type, Dest3}, Config2).
 
 
 %% @doc Called by the invited process
@@ -330,8 +334,6 @@ handle_call({ringing, Id, Callee}, _From, State) ->
         {ok, #invite{}} ->
             {reply, ok, event({ringing, Callee}, State)};
         not_found ->
-            lager:error("NF: ~p ~p", [Id, State#state.invites]),
-
             {reply, {error, invite_not_found}, State} 
     end;
 
@@ -345,7 +347,8 @@ handle_call({accepted, Id, Answer, Callee}, _From, State) ->
             case handle(nkcollab_call_set_answer, Args, State2) of
                 {ok, State3} ->
                     State4 = do_accepted(Inv, State3),
-                    {reply, {ok, self()}, State4};
+                    State5 = event({accepted, Callee}, State4),
+                    {reply, {ok, self()}, State5};
                 {error, Error, State3} ->
                     hangup(self(), Error),
                     {reply, {error, Error}, State3}
@@ -421,52 +424,9 @@ handle_cast({rejected, Id}, State) ->
             {noreply, State}
     end;
 
-handle_cast({session_event, SessId, {candidate, Candidate}}, State) ->
-    case State of
-        #state{caller_session_id=SessId, caller_link=Link} ->
-            {noreply, do_candidate(Link, Candidate, State)};
-        #state{callee_session_id=SessId, callee_link=Link} ->
-            {noreply, do_candidate(Link, Candidate, State)};
-         _ ->
-            case find_invite_by_id(SessId, State) of
-                {ok, #invite{link=Link}} ->
-                    {noreply, do_candidate(Link, Candidate, State)};
-                not_found ->
-                    ?LLOG(notice, "received unexpected session candidate: ~p", 
-                          [SessId], State),
-                    {noreply, State}
-            end
-    end;
-
-handle_cast({session_event, SessId, {answer, Answer}}, State) ->
-    case State of
-        #state{id=CallId, caller_session_id=SessId, caller_link=Link, call=Call} ->
-            Callee = maps:get(caller, Call, #{}),
-            Args = [CallId, Link, SessId, Answer, Callee],
-            case handle(nkcollab_call_answer, Args, State) of
-                {ok, State2} ->
-                    {noreply, State2};
-                {error, Error, State2} ->
-                    hangup(self(), Error),
-                    {noreply, State2}
-            end;
-        _ ->
-            {noreply, State}
-    end;
-
-handle_cast({session_event, SessId, {destroyed, _Reason}}, State) ->
-    case State of
-        #state{caller_session_id=SessId} ->
-            do_hangup(caller_stopped, State);
-        #state{callee_session_id=SessId} ->
-            do_hangup(callee_stopped, State);
-        _ ->
-            rejected(self(), SessId),
-            {noreply, State}
-    end;
-
-handle_cast({session_event, _SessId, _Event}, State) ->
-    {noreply, State};
+% The session has launched a candidate for the backend
+handle_cast({session_event, SessId, Event}, State) ->
+    do_session_event(SessId, Event, State);
 
 handle_cast({hangup, Reason}, State) ->
     ?LLOG(info, "external hangup: ~p", [Reason], State),
@@ -555,7 +515,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(Reason, State) ->
     #state{caller_session_id=Caller, callee_session_id=Callee, stop_reason=Stop} = State,
-    Reason = case Stop of
+    Stop2 = case Stop of
         false ->
             Ref = nklib_util:uid(),
             ?LLOG(notice, "terminate error ~s: ~p", [Ref, Reason], State),
@@ -563,12 +523,14 @@ terminate(Reason, State) ->
         _ ->
             Stop
     end,
-    stop_session(Caller, Reason),
-    stop_session(Callee, Reason),
+    stop_session(Caller, Stop2),
+    stop_session(Callee, Stop2),
     State2 = cancel_all(State),
-    State3 = event({hangup, Reason}, State2),
+    timer:sleep(100),
+    % Give time for registrations to success
+    State3 = event({hangup, Stop2}, State2),
     {ok, _State4} = handle(nkcollab_call_terminate, [Reason], State3),
-    % Wait for events
+    % Wait to receive events before receiving DOWN
     timer:sleep(100),
     ok.
 
@@ -649,29 +611,26 @@ launch_out(Inv, #state{id=CallId, call=Call}=State) ->
 
 
 %% @private
-launched_out(Inv, Link, #state{invites=Invs}=State) ->
-    #invite{pos=Pos, dest=Dest} = Inv, 
+launched_out(#invite{pos=Pos, dest=Dest}=Inv, Link, State) ->
     ?LLOG(info, "launched out ~p (~p) from ~p", [Dest, Pos, Link], State),
     Inv2 = Inv#invite{launched=true, link=Link},
-    Invs2 = lists:keystore(Pos, #invite.pos, Invs, Inv2),
-    State2 = State#state{invites=Invs2},
+    State2 = store_invite(Inv2, State),
     State3 = links_add(Link, callee_link, State2),
     {noreply, State3}.
 
 
 %% @private
-launched_retry(Inv, Secs, #state{invites=Invs}=State) ->
+launched_retry(Inv, Secs, State) ->
     #invite{pos=Pos, dest=Dest} = Inv, 
     ?LLOG(notice, "retrying out ~p (~p, ~p secs)", [Dest, Pos, Secs], State),
     erlang:send_after(1000*Secs, self(), {launch_out, Pos}),
-    Invs2 = lists:keystore(Pos, #invite.pos, Invs, Inv),
-    {noreply, State#state{invites=Invs2}}.
+    {noreply, State}.
 
 
 %% @private
 start_callee_session(#invite{session_id=undefined}=Inv, State) ->
-    #invite{pos=Pos, session_config=Config} = Inv,
-    #state{id=CallId, caller_session_id=CallerSessId, invites=Invs} = State,
+    #invite{session_config=Config} = Inv,
+    #state{id=CallId, caller_session_id=CallerSessId} = State,
     Config1 = maps:with(?CALLEE_FIELDS, Config),
     Config2 = Config1#{register=>{nkcollab_call, CallId, self()}},
     Args = [CallId, CallerSessId, Config2],
@@ -679,8 +638,7 @@ start_callee_session(#invite{session_id=undefined}=Inv, State) ->
         {ok, CalleeSessId, Pid, Offer, State2} ->
             State3 = links_add(CalleeSessId, callee_session_id, Pid, State2),
             Inv2 = Inv#invite{session_id=CalleeSessId, offer=Offer},
-            Invs2 = lists:keystore(Pos, #invite.pos, Invs, Inv2),
-            {ok, Inv2, State3#state{invites=Invs2}};
+            {ok, Inv2, store_invite(Inv2, State3)};
         {error, Error, State2} ->
             {error, Error, State2}
     end;
@@ -704,6 +662,60 @@ do_accepted(Inv, #state{call=Call}=State) ->
         call = ?CALL(#{callee_session_id=>CalleeSessId}, Call2)
     },
     links_add(CalleeLink, callee_link, State3).
+
+
+% The session has launched a candidate for the backend
+do_session_event(SessId, {candidate, Candidate}, State) ->
+    State2 = case find_sess_id(SessId, State) of
+        {caller, Link} ->
+            event({session_candidate, SessId, Candidate, Link}, State);
+        {callee, Link} ->
+            event({session_candidate, SessId, Candidate, Link}, State);
+        {invite, Link} ->
+            event({session_candidate, SessId, Candidate, Link}, State);
+        not_found ->
+            ?LLOG(notice, "received unexpected session candidate: ~p", 
+                  [SessId], State),
+            State
+    end,
+    {noreply, State2};
+
+% If the caller session has an answer, call callback
+do_session_event(SessId, {answer, Answer}, State) ->
+    State2 = case find_sess_id(SessId, State) of
+        {caller, Link} ->
+            event({session_answer, SessId, Answer, Link}, State);
+        _ ->
+            State
+    end,
+    {noreply, State2};
+
+do_session_event(SessId, {destroyed, _Reason}, State) ->
+    case find_sess_id(SessId, State) of
+        {caller, _} ->
+            do_hangup(caller_stopped, State);
+        {callee, _} ->
+            do_hangup(callee_stopped, State);
+        {invite, _} ->
+            rejected(self(), SessId),
+            {noreply, State};
+        not_found ->
+            {noreply, State}
+    end;
+
+do_session_event(SessId, {status, Status, Meta}, State) ->
+    State2 = case find_sess_id(SessId, State) of
+        {Type, Link} ->
+            lager:warning("Status for ~s (~p): ~p", [SessId, Type, Status]),
+            event({session_status, SessId, Status, Meta, Link}, State);
+        not_found ->
+            State
+    end,
+    {noreply, State2};
+
+do_session_event(_SessId, _Event, State) ->
+    {noreply, State}.
+
 
 
 %% @private
@@ -755,11 +767,14 @@ cancel_all(State) ->
 %% @private
 cancel_all_but(Except, #state{invites=Invs}=State) ->
     State2 = lists:foldl(
-        fun(#invite{pos=Pos, timer=Timer}=Inv, AccState) ->
+        fun(Inv, AccState) ->
+            #invite{pos=Pos, timer=Timer, session_id=SessId, link=Link} = Inv,
             nklib_util:cancel_timer(Timer),
             case Pos of
-                Except -> AccState;
-                _ -> do_cancelled(Inv, AccState)
+                Except -> 
+                    AccState;
+                _ -> 
+                    event({session_cancelled, SessId, Link}, AccState)
             end
         end,
         State,
@@ -768,18 +783,20 @@ cancel_all_but(Except, #state{invites=Invs}=State) ->
 
 
 %% @private
-do_candidate(Link, Candidate, #state{id=CallId}=State) ->
-    Args = [CallId, Link, Candidate],
-    {ok, State2} = handle(nkcollab_call_candidate, Args, State),
-    State2.
-
-
-%% @privaye
-do_cancelled(#invite{link=Link, dest=Dest}=Inv, #state{id=CallId}=State) ->
-    ?LLOG(info, "sending CANCEL to ~p (~p)", [Link, Dest], State),
-    stop_session(Inv, originator_cancel),
-    {ok, State2} = handle(nkcollab_call_cancelled, [CallId, Link], State),
-    State2.
+find_sess_id(SessId, State) ->
+    case State of
+        #state{caller_session_id=SessId, caller_link=Link} ->
+            {caller, Link};
+        #state{callee_session_id=SessId, callee_link=Link} ->
+            {callee, Link};
+         _ ->
+            case find_invite_by_id(SessId, State) of
+                {ok, #invite{link=Link}} ->
+                    {invite, Link};
+                not_found ->
+                    not_found
+            end
+    end.
 
 
 %% @private
@@ -887,7 +904,10 @@ links_fold(Fun, Acc, #state{links=Links}) ->
     nklib_links:fold_values(Fun, Acc, Links).
 
 
-
-
+%% @private
+store_invite(#invite{pos=Pos}=Inv, #state{invites=Invs}=State) ->
+    Invs2 = lists:keystore(Pos, #invite.pos, Invs, Inv),
+    State#state{invites=Invs2}.
+    
 
 

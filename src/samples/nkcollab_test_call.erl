@@ -27,10 +27,10 @@
 %% 1) Call from Verto/Janus native to API (Verto/Janus emulated)
 %%    - A Verto or Janus session logins (caller, native, without "t")
 %%    - Another Verto/Janus logins as API (with "t")
-%%    - When the first calls, the native processing in nkcollab_verto_callabacks
+%%    - When the first calls, the native processing in nkcollab_verto_callbacks
 %%      takes place (see nkcollab_verto_invite).
 %%    - A call is started that generates two sessions.
-%%      nkcollab_call_resolve and nkcollab_call_invite are called
+%%      nkcollab_call_expand and nkcollab_call_invite are called
 %%    - Since the callee is an API 'user' endpoint, in nkcollab_call_api:resolve/3 it
 %%      is directed to {nkcollab_api_user, Pid}. In invite/6, we send the invite
 %%      over the wire. It is captured in api_client_fun/2 here, and a INVITE is
@@ -48,17 +48,17 @@
 %%    - nkcollab_verto_invite (or janus) here is called. It sends a call creation
 %%      request over the API, and registers the Verto/Janus session with our client API
 %%    - When the answer is received it gets api_client_fun, same for hangup
-%%    - nkcollab_call_resolve is called, and captured at destination Verto/Janus
+%%    - nkcollab_call_expand is called, and captured at destination Verto/Janus
 %%    - nkcollab_call_invite is also captured (see nkcollab_verto_callbacks for details)
 %%    - Test rejecting, cancelling, candidates in destination or both
 %%    - Test Janus/Janus to test candidates in both directions
 %% 
 %% 3) Call from Verto/Janus to SIP
 %%    - When native Verto/Janus calls a number that is resolved to sip in
-%%      nkcollab_sip_callbacks:nkcollab_call_resolve(), the invite is also captured.
+%%      nkcollab_sip_callbacks:nkcollab_call_expand(), the invite is also captured.
 %%      Functions nkcollab_sip_invite_ringing, _rejected and _answered are called
 %%      However, with the default janus backend, you must use "sip:XXX" so that 
-%%      the caller session is created with sdp_type=rtp (see nkcollab_call:start2())
+%%      the caller session is created with sdp_type=rtp (see nkcollab_call:start_type())
 %%    - Try cancel, rejected, hangup on both sides
 %%    - See options sip_registrar, sip_invite_to_not_registered, etc. in
 %%      nkcollab_sip_callbacks
@@ -72,7 +72,7 @@
 %%    - destination can be a native or emulated API session
 %%
 %% 6) Use nkmedia_fs and kms backends
-%%    - Since nkcollab_call:start2/3 is being used, the following prefixes are used:
+%%    - Since nkcollab_call:start_type/3 is being used, the following prefixes are used:
 %%    - fs: use nkmedia_fs backend. It will bufer candidates if received
 %%    - kms: use nkmedia_kms backend. Verto and Janus use no_answer_trickle_ice for
 %%      the caller and no_offer_trickle_ice for the callee.
@@ -144,14 +144,12 @@ restart() ->
 
 plugin_deps() ->
     [
-        nkcollab_sip, nksip_registrar, nksip_trace,
+        nksip_registrar, nksip_trace,
         nkcollab_verto, nkcollab_janus,
         nkmedia_fs, nkmedia_kms, nkmedia_janus,
-        nkmedia_fs_verto_proxy, 
-        nkmedia_janus_proxy, 
-        nkmedia_kms_proxy,
-        nkservice_api_gelf,
-        nkmedia_room_msglog
+        nkmedia_fs_verto_proxy, nkmedia_janus_proxy, nkmedia_kms_proxy,
+        nkcollab_verto, nkcollab_janus, nkcollab_sip,
+        nkservice_api_gelf
     ].
 
 
@@ -162,6 +160,10 @@ plugin_deps() ->
 %% ===================================================================
 
 %% Connect
+
+%% Connect
+connect() ->
+    connect(u1, #{}).
 
 connect(User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
@@ -174,12 +176,17 @@ connect2(User, Data) ->
     C.
 
 get_client() ->
-    [{_, C}|_] = nkservice_api_client:get_all(),
-    C.
+    [{_, Pid}|_] = nkservice_api_client:get_all(),
+    Pid.
 
 
-call_cmd(C, Cmd, Data) ->
-    nkservice_api_client:cmd(C, media, call, Cmd, Data).
+cmd(Cmd, Data) ->
+    Pid = get_client(),
+    cmd(Pid, Cmd, Data).
+
+cmd(Pid, Cmd, Data) ->
+    nkservice_api_client:cmd(Pid, collab, call, Cmd, Data).
+
 
 
 
@@ -196,7 +203,7 @@ api_server_login(Data, SessId, State) ->
 %% @doc
 api_allow(Req, State) ->
     nkcollab_test_api:api_allow(Req, State).
-
+ 
 
 %% @oc
 api_subscribe_allow(SrvId, Class, SubClass, Type, State) ->
@@ -236,7 +243,7 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
     case start_call(Dest, Offer, CallId, Ws, Events, Link) of
         ok ->
             {ok, {test_api_server, Ws}, Verto};
-        {rejected, Reason} ->
+        {error, Reason} ->
             lager:notice("Verto invite rejected ~p", [Reason]),
             {rejected, Reason, Verto}
     end;
@@ -245,11 +252,11 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
 nkcollab_verto_invite(_SrvId, _CallId, _Offer, _Verto) ->
     continue.
 
-
+ 
 %% @private
 nkcollab_verto_answer(CallId, {test_api_server, Ws}, Answer, Verto) ->
     Callee = #{info => nkcollab_verto_test},
-    case call_cmd(Ws, accepted, #{call_id=>CallId, answer=>Answer, callee=>Callee}) of
+    case cmd(Ws, accepted, #{call_id=>CallId, answer=>Answer, callee=>Callee}) of
         {ok, #{}} ->
             %% Call will get the answer and send it back to the session
             ok;
@@ -265,7 +272,7 @@ nkcollab_verto_answer(_CallId, _Link, _Answer, _Verto) ->
 
 %% @private
 nkcollab_verto_rejected(CallId, {test_api_server, Ws}, Verto) ->
-    call_cmd(Ws, rejected, #{call_id=>CallId}),
+    cmd(Ws, rejected, #{call_id=>CallId}),
     {ok, Verto};
 
 nkcollab_verto_rejected(_CallId, _Link, _Verto) ->
@@ -274,7 +281,7 @@ nkcollab_verto_rejected(_CallId, _Link, _Verto) ->
 
 %% @private
 nkcollab_verto_bye(CallId, {test_api_server, Ws}, Verto) ->
-    call_cmd(Ws, hangup, #{call_id=>CallId, reason=>vertoBye}),
+    cmd(Ws, hangup, #{call_id=>CallId, reason=>vertoBye}),
     {ok, Verto};
 
 nkcollab_verto_bye(_CallId, _Link, _Verto) ->
@@ -314,7 +321,7 @@ nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     case start_call(Dest, Offer, CallId, Ws, Events, Link) of
         ok ->
             {ok, {test_api_server, Ws}, Janus};
-        {rejected, Reason} ->
+        {error, Reason} ->
             lager:notice("Janus invite rejected ~p", [Reason]),
             {rejected, Reason, Janus}
     end;
@@ -327,7 +334,7 @@ nkcollab_janus_invite(_SrvId, _CallId, _Offer, _Janus) ->
 %% @private
 nkcollab_janus_answer(CallId, {test_api_server, Ws}, Answer, Janus) ->
     Callee = #{info => nkcollab_janus_test},
-    case call_cmd(Ws, accepted, #{call_id=>CallId, answer=>Answer, callee=>Callee}) of
+    case cmd(Ws, accepted, #{call_id=>CallId, answer=>Answer, callee=>Callee}) of
         {ok, #{}} ->
             %% Call will get the answer and send it back to the session
             ok;
@@ -345,17 +352,15 @@ nkcollab_janus_answer(_CallId, _Link, _Answer, _Janus) ->
 nkcollab_janus_candidate(CallId, {test_api_server, Ws}, Candidate, Janus) ->
     case Candidate of
         #candidate{last=true} ->
-            lager:error("CC1"),
-            {ok, _} = call_cmd(Ws, set_candidate_end, #{call_id=>CallId});
+            {ok, _} = cmd(Ws, set_candidate_end, #{call_id=>CallId});
         #candidate{m_id=Id, m_index=Index, a_line=ALine} ->
-            lager:error("CC2"),
             Data = #{
                 call_id => CallId, 
                 sdpMid => Id, 
                 sdpMLineIndex => Index, 
                 candidate => ALine
             },
-            {ok, _} = call_cmd(Ws, set_candidate, Data)
+            {ok, _} = cmd(Ws, set_candidate, Data)
     end,
     {ok, Janus};
 
@@ -365,7 +370,7 @@ nkcollab_janus_candidate(_CallId, _Link, _Candidate, _Janus) ->
 
 %% @private
 nkcollab_janus_bye(CallId, {test_api_server, Ws}, Janus) ->
-    call_cmd(Ws, hangup, #{call_id=>CallId, reason=><<"Janus Stop">>}),
+    cmd(Ws, hangup, #{call_id=>CallId, reason=><<"Janus Stop">>}),
     {ok, Janus};
 
 nkcollab_janus_bye(_CallId, _Link, _Verto) ->
@@ -398,6 +403,7 @@ nks_sip_connection_recv(SipMsg, _Packet) ->
     end.
 
 
+ 
 
 %% ===================================================================
 %% Internal
@@ -407,15 +413,14 @@ nks_sip_connection_recv(SipMsg, _Packet) ->
 start_call(Dest, Offer, CallId, Ws, Events, _Link) ->
     Config = #{ 
         call_id => CallId,
-        type => all,
-        callee => Dest,
+        dest => Dest,
         caller => #{info=>nkcollab_call_test},
         offer => Offer,
         events_body => Events,
         no_answer_trickle_ice => true,      % For our answer
         no_offer_trickle_ice => true        % For B-side offer
     },
-    case call_cmd(Ws, create, Config) of
+    case cmd(Ws, create, Config) of
         {ok, #{<<"call_id">>:=CallId}} -> 
             ok;
         {error, Error} ->
@@ -435,7 +440,7 @@ incoming_config(Backend, Type, Offer, Events, Opts) ->
 
 %% @private
 start_call(Ws, Callee, Config) ->
-    case call_cmd(Ws, start, Config#{callee=>Callee}) of
+    case cmd(Ws, start, Config#{callee=>Callee}) of
         {ok, #{<<"call_id">>:=_CallId}} -> 
             ok;
         {error, Error} ->
@@ -445,12 +450,14 @@ start_call(Ws, Callee, Config) ->
 
 %% @private
 api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, UserData) ->
-    % lager:error("FUN: ~p", [Data]),
+    #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
     Sub = maps:get(<<"subclass">>, Data, <<"*">>),
     Type = maps:get(<<"type">>, Data, <<"*">>),
     ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
     Body = maps:get(<<"body">>, Data, #{}),
+    lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
+                 [User, Class, Sub, Type, ObjId, Body]),
     Sender = case Body of
         #{
             <<"verto_call_id">> := SCallId,
@@ -466,7 +473,7 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
             unknown
     end,
     case {Class, Sub, Type} of
-        {<<"media">>, <<"call">>, <<"answer">>} ->
+        {<<"collab">>, <<"call">>, <<"session_answer">>} ->
             #{<<"answer">>:=#{<<"sdp">>:=SDP}} = Body,
             case Sender of
                 {verto, CallId, Pid} ->
@@ -474,7 +481,7 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
                 {janus, CallId, Pid} ->
                     nkcollab_janus:answer(Pid, CallId, #{sdp=>SDP})
             end;
-        {<<"media">>, <<"call">>, <<"hangup">>} ->
+        {<<"collab">>, <<"call">>, <<"hangup">>} ->
             case Sender of
                 {verto, CallId, Pid} ->
                     nkcollab_verto:hangup(Pid, CallId);
@@ -489,8 +496,7 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
                     end
             end;
         _ ->
-            lager:notice("TEST CLIENT event ~s:~s:~s:~s: ~p", 
-                         [Class, Sub, Type, ObjId, Body])
+            ok
     end,
     {ok, #{}, UserData};
 
@@ -502,7 +508,7 @@ api_client_fun(#api_req{cmd= <<"invite">>, data=Data}, UserData) ->
     spawn(
         fun() ->
             {ok, _} = 
-                call_cmd(Self, ringing, #{call_id=>CallId, callee=>#{api_test=>true}}),
+                cmd(Self, ringing, #{call_id=>CallId, callee=>#{api_test=>true}}),
             Link = {test_api_server, Self},
             case UserData of
                 #{test_janus_server:=JanusPid} ->

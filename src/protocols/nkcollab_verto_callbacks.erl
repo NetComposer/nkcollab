@@ -1,3 +1,4 @@
+
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
@@ -32,7 +33,6 @@
          nkcollab_verto_handle_call/3, nkcollab_verto_handle_cast/2,
          nkcollab_verto_handle_info/2]).
 -export([nkcollab_call_expand/3, nkcollab_call_invite/6, 
-         nkcollab_call_answer/6, nkcollab_call_cancelled/3, 
          nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
@@ -135,7 +135,7 @@ nkcollab_verto_invite(SrvId, CallId, #{dest:=Dest}=Offer, Verto) ->
         caller => #{info=>verto_native},
         no_answer_trickle_ice => true
     },
-    case nkcollab_call:start2(SrvId, Dest, Config) of
+    case nkcollab_call:start_type(SrvId, nkcollab_any, Dest, Config) of
         {ok, CallId, CallPid} ->
             {ok, {nkcollab_call, CallId, CallPid}, Verto};
         {error, Error} ->
@@ -324,34 +324,28 @@ nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, _Call) ->
 
 
 %% @private
-nkcollab_call_answer(CallId, {nkcollab_verto, CallId, Pid}, _SessId, Answer, 
-                    _Callee, Call) ->
-    case nkcollab_verto:answer(Pid, CallId, Answer) of
-        ok ->
-            {ok, Call};
-        {error, Error} ->
-            lager:error("Error setting Verto answer: ~p", [Error]),
-            {error, Error, Call}
-    end;
-
-nkcollab_call_answer(_CallId, _Link, _SessId, _Answer, _Callee, _Call) ->
-    continue.
-
-
-%% @private
-nkcollab_call_cancelled(_CallId, {nkcollab_verto, CallId, Pid}, _Call) ->
-    nkcollab_verto:hangup(Pid, CallId, originator_cancel),
-    continue;
-
-nkcollab_call_cancelled(_CallId, _Link, _Call) ->
-    continue.
-
-
-%% @private
 %% Convenient functions in case we are registered with the call as
 %% {nkcollab_verto, CallId, Pid}
-nkcollab_call_reg_event(CallId, {nkcollab_verto, CallId, Pid}, {hangup, Reason}, _Call) ->
-    nkcollab_verto:hangup(Pid, CallId, Reason),
+nkcollab_call_reg_event(CallId, {nkcollab_verto, CallId, Pid}=Link, Event, _Call) ->
+    case Event of
+        {session_answer, _SessId, Answer, Link} ->
+            case nkcollab_verto:answer(Pid, CallId, Answer) of
+                ok ->
+                    ok;
+                {error, Error} ->
+                    lager:error("Error setting Verto answer: ~p", [Error]),
+                    nkcollab_call:hangup(CallId, verto_error)
+            end;
+        {session_cancelled, _SessId, Link} ->
+            nkcollab_verto:hangup(Pid, CallId, originator_cancel);
+        {session_status, _SessId, Status, Data, Link} ->
+            lager:notice("Verto status: ~p ~p", [Status, Data]);
+        {hangup, Reason} ->
+            nkcollab_verto:hangup(Pid, CallId, Reason);
+        _ ->
+            % lager:notice("Verto unknown call event: ~p", [Event])
+            ok
+    end,
     continue;
 
 nkcollab_call_reg_event(_CallId, _Link, _Event, _Call) ->

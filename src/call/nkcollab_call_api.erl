@@ -23,8 +23,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([cmd/3]).
--export([resolve/4, invite/6, cancel/3, answer/6, candidate/4]).
--export([call_event/4]).
+-export([expand/3, invite/6]).
+-export([api_call_hangup /4, api_call_down/3]).
 
 -include_lib("nkservice/include/nkservice.hrl").
 -include_lib("nksip/include/nksip.hrl").
@@ -36,30 +36,28 @@
 
 
 %% @doc An call start has been received
-%% - We start the call, the callee_link is the user session process
-%%   (if the user session stops, the call will be destroyed)
-%% - We register the user session process with the call also
-%%   (if the call stops, it is detected)
-
-%% - When the call has an answer or candidates, functions in 
-%%   nkcollab_call_lib will be called
-
-%% Subscribes to events
+%% We create the call linked with the API server process
+%% - we capture the destroy event %%
+%%   (nkcollab_call_reg_event() -> call_hangup () here)
+%% - if the session is killed, it is detected
+%%   (api_server_reg_down() -> api_call_down() here)
+%% It also subscribes the API session to events
 cmd(<<"create">>, Req, State) ->
     #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
-    #{callee:=Callee} = Data,
+    #{dest:=Dest} = Data,
     Config = Data#{
         caller_link => {nkcollab_api, self()},
         user_id => User,
         user_session => UserSession
     },
-    {ok, CallId, Pid} = nkcollab_call:start2(SrvId, Callee, Config),
+    Type = maps:get(type, Data, nkcollab_any),
+    {ok, CallId, Pid} = nkcollab_call:start_type(SrvId, Type, Dest, Config),
     nkservice_api_server:register(self(), {nkcollab_call, CallId, Pid}), 
     case maps:get(subscribe, Data, true) of
         true ->
             % In case of no_destination, the call will wait 100msecs before stop
             Body = maps:get(events_body, Data, #{}),
-            Event = get_call_event(SrvId, <<"*">>, CallId, Body),
+            Event = get_call_event(SrvId, CallId, Body),
             nkservice_api_server:register_event(self(), Event);
         false ->
             ok
@@ -154,9 +152,8 @@ cmd(<<"get_info">>, #api_req{data=Data}, State) ->
     #{call_id:=CallId} = Data,
     case nkcollab_call:get_call(CallId) of
         {ok, Call} ->
-            Keys = nkcollab_call_api_syntax:call_fields(),
-            Data2 = maps:with(Keys, Call),
-            {ok, Data2, State};
+            Info = nkcollab_call_api_syntax:get_call_info(Call),
+            {ok, Info, State};
         {error, Error} ->
             {error, Error, State}
     end;
@@ -171,33 +168,60 @@ cmd(Cmd, _Req, State) ->
 
 
 %% ===================================================================
+%% API server callbacks
+%% ===================================================================
+
+
+%% @private Sent by the call when it is stopping
+%% We sent a message to the API session to remove the call before 
+%% it receives the DOWN.
+api_call_hangup(CallId, ApiPid, _Reason, Call) ->
+    #{srv_id:=SrvId} = Call,
+    Event = get_call_event(SrvId, CallId, undefined),
+    nkservice_api_server:unregister_event(ApiPid, Event),
+    nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
+    {ok, Call}.
+
+
+%% @private Called when API server detects a registered call is down
+%% Normally it should have been unregistered first
+%% (detected above and sent in the cast after)
+api_call_down(CallId, Reason, State) ->
+    #{srv_id:=SrvId} = State,
+    lager:warning("API Server: Call ~s is down: ~p", [CallId, Reason]),
+    Event = get_call_event(SrvId, CallId, undefined),
+    nkservice_api_server:unregister_event(self(), Event),
+    nkcollab_call_api_events:call_down(SrvId, CallId).
+
+
+%% ===================================================================
 %% Internal
 %% ===================================================================
 
 
 %% @private Called from nkcollab_call_callbacks
-resolve(User, user, Acc, Call) ->
+expand({nkcollab_user, User}, Acc, Call) ->
     Dests = [
         #{dest=>{nkcollab_api_user, Pid}} 
         || {_SessId, Pid} <- nkservice_api_server:find_user(User)
     ],
     {ok, Acc++Dests, Call};
 
-resolve(Callee, session, Acc, Call) ->
-    Callee2 = nklib_util:to_binary(Callee),
-    Dests = case nkservice_api_server:find_session(Callee2) of
+expand({nkcollab_session, Session}, Acc, Call) ->
+    Session2 = nklib_util:to_binary(Session),
+    Dests = case nkservice_api_server:find_session(Session2) of
         {ok, _User, Pid} ->
-            [#{dest=>{nkcollab_api_session, Callee2, Pid}}];
+            [#{dest=>{nkcollab_api_session, Session2, Pid}}];
         not_found ->
             []
     end,
     {ok, Acc++Dests, Call};
 
-resolve(Callee, all, Acc, Call) ->
-    {ok, Acc2, Call2} = resolve(Callee, user, Acc, Call),
-    resolve(Callee, session, Acc2, Call2);
+expand({nkcollab_any, Dest}, Acc, Call) ->
+    {ok, Acc2, Call2} = expand({nkcollab_user, Dest}, Acc, Call),
+    expand({nkcollab_session, Dest}, Acc2, Call2);
 
-resolve(_Callee, _Type, Acc, Call) ->
+expand(_Dest, Acc, Call) ->
     {ok, Acc, Call}.
 
 
@@ -219,8 +243,8 @@ invite(CallId, {Type, Pid}, SessId, Offer, Caller, #{srv_id:=SrvId}=Call) ->
             case maps:get(subscribe, Res, true) of
                 true ->
                     Body = maps:get(events_body, Res, #{}),
-                    Event = get_call_event(SrvId, <<"*">>, CallId, Body),
-                    nkservice_api_server:register_event(Pid, Event, Body);
+                    Event = get_call_event(SrvId, CallId, Body),
+                    nkservice_api_server:register_event(Pid, Event);
                 false -> 
                     ok
             end,
@@ -232,31 +256,19 @@ invite(CallId, {Type, Pid}, SessId, Offer, Caller, #{srv_id:=SrvId}=Call) ->
     end.
 
 
-%% @private
-cancel(CallId, Pid, Call) ->
-    nkcollab_call_api_events:event(CallId, cancelled, Call, Pid).
+% %% @private
+% cancel(CallId, Pid, Call) ->
+%     nkcollab_call_api_events:event(CallId, cancelled, Call, Pid).
 
 
-%% @private 
-answer(CallId, Pid, SessId, Answer, Callee, Call) ->
-    nkcollab_call_api_events:event(CallId, {answer, SessId, Answer, Callee}, Call, Pid).
+% %% @private 
+% answer(CallId, Pid, SessId, Answer, Callee, Call) ->
+%     nkcollab_call_api_events:event(CallId, {answer, SessId, Answer, Callee}, Call, Pid).
 
 
-%% @private 
-candidate(CallId, Pid, Candidate, Call) ->
-    nkcollab_call_api_events:event(CallId, {candidate, Candidate}, Call, Pid).
-
-
-%% @private
-%% The event will be captured as standard, no need to send it here
-call_event(CallId, ApiPid, {hangup, _Reason}, #{srv_id:=SrvId}=Call) ->
-    nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
-    Event = get_call_event(SrvId, <<"*">>, CallId, undefined),
-    nkservice_api_server:unregister_event(ApiPid, Event),
-    {ok, Call};
-
-call_event(_CallId, _Pid, _Event, Call) ->
-    {ok, Call}.
+% %% @private 
+% candidate(CallId, Pid, Candidate, Call) ->
+%     nkcollab_call_api_events:event(CallId, {candidate, Candidate}, Call, Pid).
 
 
 %% ===================================================================
@@ -265,12 +277,12 @@ call_event(_CallId, _Pid, _Event, Call) ->
 
 
 %% @private
-get_call_event(SrvId, Type, CallId, Body) ->
+get_call_event(SrvId, CallId, Body) ->
     #event{
         srv_id = SrvId,     
-        class = <<"media">>, 
+        class = <<"collab">>, 
         subclass = <<"call">>,
-        type = nklib_util:to_binary(Type),
+        type = <<"*">>,
         obj_id = CallId,
         body = Body
     }.

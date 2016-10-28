@@ -762,9 +762,11 @@ terminate(Reason, #state{stop_reason=Stop}=State) ->
         _ ->
             Stop
     end,
+    timer:sleep(100),
+    % Give time for registrations to success
     State3 = do_event({destroyed, Stop2}, State2),
     {ok, _State4} = handle(nkcollab_room_terminate, [Reason], State3),
-    % Wait for events
+    % Wait to receive events before receiving DOWN
     timer:sleep(100),
     ok.
 

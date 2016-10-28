@@ -22,7 +22,7 @@
 -module(nkcollab_call_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3, event/4]).
+-export([event/3, event_linked/4]).
 
 -include_lib("nksip/include/nksip.hrl").
 
@@ -52,22 +52,41 @@ event(_CallId, _Event, Call) ->
     {ok, Call}.
 
 
-
 %% @private
--spec event(nkcollab_call:id(), term(), nkcollab_call:call(), pid()) ->
+%% Send the event only if the Link matched the one on the event itself, and,
+%% in that case, only to that pid()
+-spec event_linked(nkcollab_call:id(), nklib:link(), 
+                 nkcollab_call:event(), nkcollab_call:call()) ->
     {ok, nkcollab_call:call()}.
 
-event(CallId, {answer, SessId, Answer, Callee}, Call, Pid) ->
-    Data = #{session_id=>SessId, answer=>Answer, callee=>Callee},
-    send_event(CallId, answer, Data, Call, Pid);
+event_linked(CallId, Link, {session_candidate, SessId, Candidate, Link}, Call) ->
+    case Candidate of
+        #candidate{last=true} ->
+            send_event(CallId, session_candidate_end, #{session_id=>SessId}, Call, Link);
+        #candidate{a_line=Line, m_id=Id, m_index=Index} ->
+            Data = #{
+                session_id => SessId, 
+                sdpMid => Id, 
+                sdpMLineIndex => Index, 
+                candidate => Line
+            },
+            send_event(CallId, session_candidate, Data, Call, Link)
+    end;
 
-event(CallId, {candidate, #candidate{}=Candidate}, Call, Pid) ->
-    #candidate{a_line=Line, m_id=Id, m_index=Index} = Candidate,
-    Data = #{sdpMid=>Id, sdpMLineIndex=>Index, candidate=>Line},
-	send_event(CallId, candidate, Data, Call, Pid);
+event_linked(CallId, Link, {session_answer, SessId, Answer, Link}, Call) ->
+    Data = #{session_id=>SessId, answer=>Answer},
+    send_event(CallId, session_answer, Data, Call, Link);
 
-event(_CallId, _Event, Call, _Pid) ->
+event_linked(CallId, Link, {session_cancelled, SessId, Link}, Call) ->
+    send_event(CallId, session_cancelled, #{session_id=>SessId}, Call, Link);
+
+event_linked(CallId, Link, {session_status, SessId, Status, Meta, Link}, Call) ->
+    Data = Meta#{session_id=>SessId, status=>Status},
+    send_event(CallId, session_status, Data, Call, Link);
+
+event_linked(_CallId, _Link, _Event, Call) ->
     {ok, Call}.
+
 
 
 %% ===================================================================
@@ -79,8 +98,13 @@ event(_CallId, _Event, Call, _Pid) ->
 send_event(CallId, Type, Body, Call) ->
 	send_event(CallId, Type, Body, Call, all).
 
+
 %% @private
-send_event(CallId, Type, Body, #{srv_id:=SrvId}=Call, Pid) ->
+send_event(CallId, Type, Body, #{srv_id:=SrvId}=Call, Link) ->
+    Pid = case nklib_links:get_pid(Link) of
+        LinkPid when is_pid(LinkPid) -> LinkPid;
+        _ -> all
+    end,
     nkcollab_api_events:send_event(SrvId, call, CallId, Type, Body, Pid),
     {ok, Call}.
 

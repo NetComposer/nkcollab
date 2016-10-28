@@ -124,11 +124,11 @@ nkcollab_room_reg_event(_RoomId, _Link, _Event, Room) ->
                                  nkcollab_room:event(), room()) ->
     {ok, room()} | continue().
 
-nkcollab_room_member_event(RoomId, {nkmedia_api, Pid}, MemberId, 
+nkcollab_room_member_event(RoomId, {nkcollab_api, Pid}, MemberId, 
                            {stopped_member, MemberId, _Info}, Room) ->
     nkcollab_room_api:member_stopped(RoomId, MemberId, Pid, Room);
 
-nkcollab_room_member_event(RoomId, {nkmedia_api, Pid}, _MemberId, 
+nkcollab_room_member_event(RoomId, {nkcollab_api, Pid}, _MemberId, 
                            {destroyed, _Reason}, Room) ->
     nkcollab_room_api:room_stopped(RoomId, Pid, Room);
 

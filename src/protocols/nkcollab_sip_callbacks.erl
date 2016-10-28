@@ -30,8 +30,7 @@
          nkcollab_sip_invite_answered/2]).
 -export([sip_get_user_pass/4, sip_authorize/3]).
 -export([sip_register/2, sip_invite/2, sip_reinvite/2, sip_cancel/3, sip_bye/2]).
--export([nkcollab_call_expand/3, nkcollab_call_invite/6, nkcollab_call_cancelled/3,
-         nkcollab_call_answer/6, nkcollab_call_reg_event/4]).
+-export([nkcollab_call_expand/3, nkcollab_call_invite/6, nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -133,7 +132,11 @@ nkcollab_sip_invite(SrvId, Dest, Offer, _Req, _Call) ->
         caller_link => {nkcollab_sip, self()},
         caller => #{info=>sip_native}
     },
-    case nkcollab_call:start2(SrvId, Dest, Config) of
+    case binary:split(Dest, <<"@">>) of
+        [Dest2, <<"nkmedia">>] -> ok;
+        _ -> Dest2 = Dest
+    end,
+    case nkcollab_call:start_type(SrvId, nkcollab_any, Dest2, Config) of
         {ok, CallId, CallPid} ->
             {ok, {nkcollab_call, CallId, CallPid}};
         {error, Error} ->
@@ -352,34 +355,29 @@ nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, _Call) ->
 
 
 %% @private
-nkcollab_call_answer(CallId, {nkcollab_sip, _Pid}, _SessId, Answer, _Callee, Call) ->
-    case nkcollab_sip:answer({nkcollab_call, CallId, self()}, Answer) of
-        ok ->
-           {ok, Call};
-        {error, Error} ->
-            lager:error("Error in SIP answer: ~p", [Error]),
-            {error, Error, Call}
-    end;
-
-nkcollab_call_answer(_CallId, _Link, _SessId, _Answer, _Callee, _Call) ->
-    continue.
-
-
-%% @private
-nkcollab_call_cancelled(CallId, {nkcollab_sip, _Pid}, _Call) ->
-    % We should not block the call
-    Self = self(),
-    spawn(fun() -> nkcollab_sip:hangup({nkcollab_call, CallId, Self}) end),
-    continue;
-
-nkcollab_call_cancelled(_CallId, _Link, _Call) ->
-    continue.
-
-
-%% @private
-nkcollab_call_reg_event(CallId, {nkcollab_sip, _Pid}, {hangup, _Reason}, _Call) ->
-    Self = self(),
-    spawn(fun() -> nkcollab_sip:hangup({nkcollab_call, CallId, Self}) end),
+nkcollab_call_reg_event(CallId, {nkcollab_sip, _Pid}=Link, Event, _Call) ->
+    case Event of
+        {session_answer, _SessId, Answer, Link} ->
+            case nkcollab_sip:answer({nkcollab_call, CallId, self()}, Answer) of
+                ok ->
+                    ok;
+                {error, Error} ->
+                    lager:error("Error in SIP answer: ~p", [Error]),
+                    nkcollab_call:hangup(CallId, sip_error)
+            end;
+        {session_cancelled, _SessId, Link} ->
+            Self = self(),
+            spawn(fun() -> nkcollab_sip:hangup({nkcollab_call, CallId, Self}) end),
+            continue;
+        {session_status, _SessId, Status, Data, Link} ->
+            lager:notice("SIP status: ~p ~p", [Status, Data]);
+        {hangup, _Reason} ->
+            Self = self(),
+            spawn(fun() -> nkcollab_sip:hangup({nkcollab_call, CallId, Self}) end);
+        _ ->
+            % lager:notice("Verto sip call event: ~p", [Event])
+            ok
+    end,
     continue;
 
 nkcollab_call_reg_event(_CallId, _Link, _Event, _Call) ->
@@ -425,7 +423,7 @@ nkmedia_session_reg_event(_SessId, _Link, _Event, _Session) ->
 %% Internal
 %% ===================================================================
 
-expand(Dest, Call) ->
+expand(Dest, Call) when is_binary(Dest) ->
     #{srv_id:=SrvId} = Call,
     Config = nkservice_srv:get_item(SrvId, config_nkcollab_sip),
     #sip_config{invite_to_not_registered=DoExt} = Config,
@@ -434,7 +432,7 @@ expand(Dest, Call) ->
             % We allowed calling to not registered SIP endpoints
             case nklib_parse:uris(Dest) of
                 error -> 
-                    lager:info("Invalid SIP URI: ~p", [Dest]),
+                    lager:info("Ignoring invalid SIP URI: ~p", [Dest]),
                     [];
                 Parsed -> 
                     [U || #uri{scheme=S}=U <- Parsed, S==sip orelse S==sips]
@@ -451,5 +449,9 @@ expand(Dest, Call) ->
     [
         #{dest=>{nkcollab_sip, U}, session_config=>#{sdp_type=>rtp}} 
         || U <- Uris1++Uris2
-    ].
+    ];
+
+expand(Dest, _Call) ->
+    lager:error("INC: ~p", [Dest]),
+    [].
 

@@ -85,8 +85,7 @@ plugin_deps() ->
         nkmedia_janus, nkmedia_fs, nkmedia_kms, 
         nkmedia_janus_proxy, nkmedia_kms_proxy,
         nkcollab_verto, nkcollab_janus, nkcollab_sip,
-        nkservice_api_gelf,
-        nkmedia_room_msglog
+        nkservice_api_gelf
     ].
 
 
@@ -159,6 +158,9 @@ cmd(Cmd, Data) ->
     Pid = get_client(),
     cmd(Pid, Cmd, Data).
 
+cmd(Pid, Cmd, Data) ->
+    nkservice_api_client:cmd(Pid, collab, room, Cmd, Data).
+
 
 %% Invite
 start_viewer(Dest, RoomId, PresenterId) ->
@@ -192,8 +194,6 @@ candidate(Pid, SessId, #candidate{a_line=Line, m_id=Id, m_index=Index}) ->
     Data = #{session_id=>SessId, sdpMid=>Id, sdpMLineIndex=>Index, candidate=>Line},
     cmd(Pid, set_candidate, Data).
 
-cmd(Pid, Cmd, Data) ->
-    nkservice_api_client:cmd(Pid, collab, room, Cmd, Data).
 
 
 
@@ -239,7 +239,7 @@ api_server_login(_Data, _SessId, _State) ->
 
 
 %% @doc
-api_allow(_Req, State) ->
+api_allow(_Req, State) ->  
     {true, State}.
 
 
@@ -319,7 +319,7 @@ nkcollab_verto_terminate(_Reason, Verto) ->
 %% nkcollab_janus callbacks
 %% ===================================================================
 
-%% @private
+%% @private  
 nkcollab_janus_registered(User, Janus) ->
     Pid = connect(User, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}}.

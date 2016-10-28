@@ -243,7 +243,7 @@ create_member(Role, Req, State) ->
     #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
     #{room_id:=RoomId} = Data,
     Config = Data#{
-        register => {nkmedia_api, self()},
+        register => {nkcollab_api, self()},
         user_id => User,
         user_session => UserSession
     },

@@ -503,7 +503,7 @@ process_client_msg(call, Body, Msg, NkPort, #state{srv_id=SrvId}=State) ->
     #{<<"jsep">>:=JSep} = Msg,
     #{<<"type">>:=<<"offer">>, <<"sdp">>:=SDP} = JSep,
     Trickle = maps:get(<<"trickle">>, JSep, true),
-    lager:warning("janus offer, trickle: ~p", [Trickle]),
+    ?LLOG(notice, "janus offer, trickle: ~p", [Trickle], State),
     Offer = #{dest=>Dest, sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     % io:format("SDP: ~s\n", [SDP]),
     % lager:notice("JSEP: ~p", [Msg#{<<"jsep">>=>maps:remove(<<"sdp">>, JSep)}]),

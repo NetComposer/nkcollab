@@ -22,7 +22,7 @@
 -module(nkcollab_call_api_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([call_fields/0, syntax/4]).
+-export([syntax/4, get_call_info/1]).
 
 -include_lib("nkservice/include/nkservice.hrl").
 
@@ -31,40 +31,18 @@
 %% Syntax
 %% ===================================================================
 
-%% @private
-call_fields() ->
-    [
-        call_id, 
-        type,
-        no_offer_trickle_ice,
-        no_answer_trickle_ice,
-        trickle_ice_timeout,
-        sdp_type,
-        backend,
-        user_id,
-        user_session,
-        caller,
-        callee
-    ].
-
-
 syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
     {
-        Syntax#{
+        session_opts(Syntax#{
+            dest => any,
             call_id => binary,
             type => atom,
-            callee => any,
             caller => any,
             backend => atom,
-            no_offer_trickle_ice => boolean,
-            no_answer_trickle_ice => boolean,
-            trickle_ice_timeout => {integer, 1, none},
-            offer => nkmedia_api_syntax:offer(),
-            sdp_type => {enum, [webrtc, rtp]},
             events_body => any
-        },
+        }),
         Defaults,
-        [callee_id|Mandatory]
+        [dest|Mandatory]
     };
 
 syntax(<<"ringing">>, Syntax, Defaults, Mandatory) ->
@@ -148,4 +126,52 @@ syntax(<<"get_list">>, Syntax, Defaults, Mandatory) ->
     
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.
+
+
+
+%% ===================================================================
+%% Keys
+%% ===================================================================
+
+
+get_call_info(Call) ->
+    Keys = [
+        call_id, 
+        type,
+        no_offer_trickle_ice,
+        no_answer_trickle_ice,
+        trickle_ice_timeout,
+        sdp_type,
+        backend,
+        user_id,
+        user_session,
+        caller,
+        callee
+    ],
+    maps:with(Keys, Call).
+
+
+
+%% ===================================================================
+%% Internal
+%% ===================================================================
+
+
+session_opts(Data) ->
+    media_opts(Data#{
+        offer => nkmedia_api_syntax:offer(),
+        no_offer_trickle_ice => boolean,
+        no_answer_trickle_ice => boolean,
+        trickle_ice_timeout => integer,
+        sdp_type => {enum, [rtp, webrtc]}
+    }).
+
+
+media_opts(Data) ->
+    Data#{
+        mute_audio => boolean,
+        mute_video => boolean,
+        mute_data => boolean,
+        bitrate => {integer, 0, none}
+    }.
 

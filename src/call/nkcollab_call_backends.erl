@@ -33,7 +33,15 @@
 
 %% @private
 start_caller_session(CallId, Config, #{srv_id:=SrvId, offer:=Offer}=Call) ->
-    case maps:get(backend, Call, nkmedia_fs) of
+    case maps:get(backend, Call, nkmedia_janus) of
+        p2p ->
+            Config2 = Config#{
+                backend => p2p, 
+                offer => Offer,
+                call_id => CallId
+            },
+            {ok, MasterId, Pid} = nkmedia_session:start(SrvId, p2p, Config2),
+            {ok, MasterId, Pid, ?CALL(#{backend=>p2p}, Call)};
         nkmedia_janus ->
             Config2 = Config#{
                 backend => nkmedia_janus, 
@@ -59,13 +67,32 @@ start_caller_session(CallId, Config, #{srv_id:=SrvId, offer:=Offer}=Call) ->
             {ok, MasterId, Pid} = nkmedia_session:start(SrvId, park, Config2),
             {ok, MasterId, Pid, ?CALL(#{backend=>nkmedia_kms}, Call)};
         _ ->
-            continue
-    end.
+            {error, unknown_backend, Call}
+    end;
+
+start_caller_session(_CallId, _Config, Call) ->
+    {error, missing_offer, Call}.
 
 
 %% @private
 start_callee_session(CallId, MasterId, Config, #{srv_id:=SrvId}=Call) ->
     case maps:get(backend, Call, undefined) of
+        p2p ->
+            case Call of
+                #{offer:=Offer} ->
+                    Config2 = Config#{
+                        backend => p2p,
+                        offer => Offer,
+                        peer_id => MasterId,
+                        call_id => CallId,
+                        no_offer_trickle_ice => true,
+                        no_answer_trickle_ice => true
+                    },
+                    {ok, SlaveId, Pid} = nkmedia_session:start(SrvId, p2p, Config2),
+                    {ok, SlaveId, Pid, Offer, Call};
+                _ ->
+                    {error, missing_offer, Call}
+            end;
 		nkmedia_janus ->
             case nkmedia_session:cmd(MasterId, get_type, #{}) of
                 {ok, #{type:=proxy, backend:=nkmedia_janus}} ->
@@ -109,13 +136,20 @@ start_callee_session(CallId, MasterId, Config, #{srv_id:=SrvId}=Call) ->
                     {error, Error, Call}
             end;
         _ ->
-            continue
+            {error, unknown_backend, Call}
     end.
 
 
 %% @private
 set_answer(_CallId, MasterId, SlaveId, Answer, Call) ->
     case maps:get(backend, Call, undefined) of
+        p2p ->
+            case nkmedia_session:set_answer(MasterId, Answer) of
+                ok ->
+                    {ok, Call};
+                {error, Error} ->
+                    {error, Error, Call}
+            end;
         nkmedia_fs ->
             case nkmedia_session:set_answer(SlaveId, Answer) of
                 ok ->
@@ -150,5 +184,5 @@ set_answer(_CallId, MasterId, SlaveId, Answer, Call) ->
                     {error, Error, Call}
             end;
         _ ->
-            continue
+            {error, unknown_backend, Call}
     end.
