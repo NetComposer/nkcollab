@@ -345,7 +345,6 @@ handle_call({ringing, Id, Callee}, _From, State) ->
     end;
 
 handle_call({accepted, Id, Reply, Callee}, _From, State) ->
-    lager:error("REPLY: ~p", [Reply]),
     case find_invite_by_id(Id, State) of
         {ok, #invite{session_id=CalleeSessId}=Inv} ->
             ?LLOG(info, "accepted from ~p", [Id], State),

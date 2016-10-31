@@ -18,7 +18,36 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Testing the media API
+%% @doc Testing room system
+%% - With Janus or Verto, dial "pROOM" to enter as presenter in a room
+%% - Then add listeners with add_listener
+%%   or create viewers
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+%%
+
+
+
+
+
+
 -module(nkcollab_test_room).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -compile([export_all]).
@@ -97,19 +126,19 @@ plugin_deps() ->
 
 %% Connect
 connect() ->
-    connect(u1, #{}).
+    connect(test, u1, #{}).
 
-connect(User, Data) ->
+connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, Pid} = nkservice_api_client:start(test, ?URL1, User, "p1", Fun, Data),
+    {ok, _, Pid} = nkservice_api_client:start(SrvId, ?URL1, User, "p1", Fun, Data),
     Pid.
 
 connect2() ->
-    connect2(u1, #{}).
+    connect2(test, u1, #{}).
 
-connect2(User, Data) ->
+connect2(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, Pid} = nkservice_api_client:start(test, ?URL2, User, "p1", Fun, Data),
+    {ok, _, Pid} = nkservice_api_client:start(SrvId, ?URL2, User, "p1", Fun, Data),
     Pid.
 
 get_client() ->
@@ -255,10 +284,10 @@ api_subscribe_allow(_SrvId, _Class, _SubClass, _Type, State) ->
 %% ===================================================================
 
 %% @private
-nkcollab_verto_login(Login, Pass, Verto) ->
+nkcollab_verto_login(Login, Pass, #{srv_id:=SrvId}=Verto) ->
     case nkcollab_test:nkcollab_verto_login(Login, Pass, Verto) of
         {true, User, Verto2} ->
-            Pid = connect(User, #{test_verto_server=>self()}),
+            Pid = connect(SrvId, User, #{test_verto_server=>self()}),
             {true, User, Verto2#{test_api_server=>Pid}};
         Other ->
             Other
@@ -320,8 +349,8 @@ nkcollab_verto_terminate(_Reason, Verto) ->
 %% ===================================================================
 
 %% @private  
-nkcollab_janus_registered(User, Janus) ->
-    Pid = connect(User, #{test_janus_server=>self()}),
+nkcollab_janus_registered(User, #{srv_id:=SrvId}=Janus) ->
+    Pid = connect(SrvId, User, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}}.
 
 

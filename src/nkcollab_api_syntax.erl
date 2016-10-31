@@ -21,7 +21,7 @@
 %% @doc NkCOLLAB external API
 -module(nkcollab_api_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
--export([syntax/4]).
+-export([syntax/5]).
 
 
 
@@ -30,6 +30,6 @@
 %% ===================================================================
 
 
-syntax(_Cmd, Syntax, Defaults, Mandatory) ->
+syntax(_Sub, _Cmd, Syntax, Defaults, Mandatory) ->
 	{Syntax, Defaults, Mandatory}.
 

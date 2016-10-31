@@ -163,16 +163,16 @@ plugin_deps() ->
 
 %% Connect
 connect() ->
-    connect(u1, #{}).
+    connect(tets, u1, #{}).
 
-connect(User, Data) ->
+connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, C} = nkservice_api_client:start(test, ?URL1, User, "p1", Fun, Data),
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, User, "p1", Fun, Data),
     C.
 
-connect2(User, Data) ->
+connect2(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, C} = nkservice_api_client:start(test, ?URL2, User, "p1", Fun, Data),
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, User, "p1", Fun, Data),
     C.
 
 get_client() ->
@@ -219,10 +219,10 @@ api_subscribe_allow(SrvId, Class, SubClass, Type, State) ->
 %% @private
 % If the login is tXXXX, an API session is emulated (not Verto specific)
 % Without t, it is a 'standard' verto Session
-nkcollab_verto_login(Login, Pass, Verto) ->
+nkcollab_verto_login(Login, Pass, #{srv_id:=SrvId}=Verto) ->
     case nkcollab_test:nkcollab_verto_login(Login, Pass, Verto) of
         {true, <<"t", Num/binary>>=User, Verto2} ->
-            Pid = connect(Num, #{test_verto_server=>self()}),
+            Pid = connect(SrvId, Num, #{test_verto_server=>self()}),
             {true, User, Verto2#{test_api_server=>Pid}};
         {true, User, Verto2} ->
             {true, User, Verto2};
@@ -300,8 +300,8 @@ nkcollab_verto_terminate(Reason, Verto) ->
 
 %% @private
 %% If the register with tXXXX, and API session is emulated
-nkcollab_janus_registered(<<"t", Num/binary>>, Janus) ->
-    Pid = connect(Num, #{test_janus_server=>self()}),
+nkcollab_janus_registered(<<"t", Num/binary>>, #{srv_id:=SrvId}=Janus) ->
+    Pid = connect(SrvId, Num, #{test_janus_server=>self()}),
     {ok, Janus#{test_api_server=>Pid}};
 
 nkcollab_janus_registered(_User, Janus) ->
