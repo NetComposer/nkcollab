@@ -39,8 +39,8 @@
 -include("../../include/nkcollab_call.hrl").
 -include_lib("nkservice/include/nkservice.hrl").
 
--define(CALLER_FIELDS, [sdp_type, no_answer_trickle_ice, trickle_ice_timeout, backend]).
--define(CALLEE_FIELDS, [sdp_type, no_offer_trickle_ice, trickle_ice_timeout, backend]).
+-define(CALLER_FIELDS, [sdp_type, no_answer_trickle_ice, trickle_ice_timeout]).
+-define(CALLEE_FIELDS, [sdp_type, no_offer_trickle_ice, trickle_ice_timeout]).
 
 -define(DEFAULT_BACKEND, nkmedia_janus).
 
@@ -77,7 +77,7 @@
 -type config() ::
     #{
         call_id => id(),                        % Optional
-        backend => nkcollab:backend(),
+        backend => nkcollab:backend() | none,
         no_offer_trickle_ice => boolean(),      % Buffer candidates and insert in SDP
         no_answer_trickle_ice => boolean(),       
         trickle_ice_timeout => integer(),
@@ -150,6 +150,8 @@ start(Srv, Dest, Config) ->
 
 start_type(Srv, Type, Dest, Config) ->
     case Dest of
+        <<"none", Dest2/binary>> ->
+            Config2 = Config#{backend=>none};
         <<"p2p", Dest2/binary>> ->
             Config2 = Config#{backend=>p2p};
         <<"sip", Dest2/binary>> ->
@@ -186,11 +188,13 @@ ringing(CallId, CalleeId, Callee) when is_map(Callee) ->
 
 
 %% @doc Called by the invited process
--spec accepted(id(), callee_id() | callee_session_id(), nkmedia:answer(), callee()) ->
+-spec accepted(id(), callee_id() | callee_session_id(), 
+               {offer, nkmedia:offer()} | {answer, nkmedia:answer()} | none,
+               callee()) ->    
     ok | {error, term()}.
 
-accepted(CallId, CalleeId, Answer, Callee) when is_map(Callee) ->
-    do_call(CallId, {accepted, CalleeId, Answer, Callee}).
+accepted(CallId, CalleeId, Reply, Callee) when is_map(Callee) ->
+    do_call(CallId, {accepted, CalleeId, Reply, Callee}).
 
 
 %% @doc Called by the invited process
@@ -251,7 +255,7 @@ session_event(CallId, SessId, Event) ->
 
 get_all() ->
     nklib_proc:values(?MODULE).
-
+ 
 
 %% @doc
 -spec get_call(id()) ->
@@ -280,6 +284,7 @@ get_call(CallId) ->
 -record(state, {
     id :: id(),
     srv_id :: nkservice:id(),
+    backend :: nmedia:backend() | none,
     links :: nklib_links:links(),
     caller_link :: nklib:link(),
     callee_link :: nklib:link(),
@@ -300,14 +305,16 @@ init([#{srv_id:=SrvId, call_id:=CallId, dest:=Dest}=Call]) ->
     nklib_proc:put(?MODULE, CallId),
     nklib_proc:put({?MODULE, CallId}),  
     CallerLink = maps:get(caller_link, Call, undefined),
+    Backend = maps:get(backend, Call, none),
     State1 = #state{
         id = CallId, 
         srv_id = SrvId,
+        backend = Backend,
         links = nklib_links:new(),
         caller_link = CallerLink,
         call = Call
     },
-    ?LLOG(info, "starting to ~p (~p)", [Dest, self()], State1),
+    ?LLOG(info, "starting to ~p (~p, ~p)", [Dest, Backend, self()], State1),
     State2 = case CallerLink of
         undefined ->
             State1;
@@ -337,14 +344,20 @@ handle_call({ringing, Id, Callee}, _From, State) ->
             {reply, {error, invite_not_found}, State} 
     end;
 
-handle_call({accepted, Id, Answer, Callee}, _From, State) ->
+handle_call({accepted, Id, Reply, Callee}, _From, State) ->
+    lager:error("REPLY: ~p", [Reply]),
     case find_invite_by_id(Id, State) of
         {ok, #invite{session_id=CalleeSessId}=Inv} ->
             ?LLOG(info, "accepted from ~p", [Id], State),
-            #state{id=CallId, caller_session_id=CallerSessId, call=Call} = State,
+            #state{
+                id = CallId, 
+                backend = Backend,
+                caller_session_id = CallerSessId, 
+                call = Call
+            } = State,
             State2 = State#state{call=?CALL(#{callee=>Callee}, Call)},
-            Args = [CallId, CallerSessId, CalleeSessId, Answer],
-            case handle(nkcollab_call_set_answer, Args, State2) of
+            Args = [CallId, CallerSessId, CalleeSessId, Reply, Backend],
+            case handle(nkcollab_call_set_accepted, Args, State2) of
                 {ok, State3} ->
                     State4 = do_accepted(Inv, State3),
                     State5 = event({accepted, Callee}, State4),
@@ -385,10 +398,10 @@ handle_call(Msg, From, State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast(start_caller_session, #state{id=CallId, call=Call}=State) ->
+handle_cast(start_caller_session, #state{id=CallId, backend=Backend, call=Call}=State) ->
     Config1 = maps:with(?CALLER_FIELDS, Call),
     Config2 = Config1#{register=>{nkcollab_call, CallId, self()}},
-    case handle(nkcollab_call_start_caller_session, [CallId, Config2], State) of
+    case handle(nkcollab_call_start_caller_session, [CallId, Config2,  Backend], State) of
         {ok, SessId, Pid, #state{call=Call2}=State2} ->
             State3 = State2#state{
                 caller_session_id = SessId, 
@@ -396,6 +409,8 @@ handle_cast(start_caller_session, #state{id=CallId, call=Call}=State) ->
             },
             State4 = links_add(SessId, caller_session_id, Pid, State3),
             do_start(State4);
+        {none, State2} ->
+            do_start(State2);
         {error, Error, State2} ->
             do_hangup(Error, State2)
     end;
@@ -591,8 +606,21 @@ launch_invites(Callee, State) ->
 launch_out(Inv, #state{id=CallId, call=Call}=State) ->
     case start_callee_session(Inv, State) of
         {ok, #invite{dest=Dest, session_id=SessId, offer=Offer}=Inv2, State2} ->
-            Caller = maps:get(caller, Call, #{}),
-            Args = [CallId, Dest, SessId, Offer, Caller],
+            Data = lists:flatten([
+                case SessId of
+                    undefined -> [];
+                    _ -> {session_id, SessId}
+                end,
+                case Offer of
+                    undefined -> [];
+                    _ -> {offer, Offer}
+                end,
+                case maps:find(caller, Call) of
+                    {ok, Caller} -> {caller, Caller};
+                    errror -> []
+                end
+            ]),
+            Args = [CallId, Dest, maps:from_list(Data)],
             case handle(nkcollab_call_invite, Args, State2) of
                 {ok, Link, State3} ->
                     launched_out(Inv2, Link, State3);
@@ -630,15 +658,17 @@ launched_retry(Inv, Secs, State) ->
 %% @private
 start_callee_session(#invite{session_id=undefined}=Inv, State) ->
     #invite{session_config=Config} = Inv,
-    #state{id=CallId, caller_session_id=CallerSessId} = State,
+    #state{id=CallId, backend=Backend, caller_session_id=CallerSessId} = State,
     Config1 = maps:with(?CALLEE_FIELDS, Config),
     Config2 = Config1#{register=>{nkcollab_call, CallId, self()}},
-    Args = [CallId, CallerSessId, Config2],
+    Args = [CallId, CallerSessId, Config2, Backend],
     case handle(nkcollab_call_start_callee_session, Args, State) of
         {ok, CalleeSessId, Pid, Offer, State2} ->
             State3 = links_add(CalleeSessId, callee_session_id, Pid, State2),
             Inv2 = Inv#invite{session_id=CalleeSessId, offer=Offer},
             {ok, Inv2, store_invite(Inv2, State3)};
+        {none, State2} ->
+            {ok, Inv, State2};
         {error, Error, State2} ->
             {error, Error, State2}
     end;
@@ -705,8 +735,8 @@ do_session_event(SessId, {destroyed, _Reason}, State) ->
 
 do_session_event(SessId, {status, Status, Meta}, State) ->
     State2 = case find_sess_id(SessId, State) of
-        {Type, Link} ->
-            lager:warning("Status for ~s (~p): ~p", [SessId, Type, Status]),
+        {_Type, Link} ->
+            % lager:warning("Status for ~s (~p): ~p", [SessId, Type, Status]),
             event({session_status, SessId, Status, Meta, Link}, State);
         not_found ->
             State

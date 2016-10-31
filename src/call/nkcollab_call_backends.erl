@@ -21,7 +21,7 @@
 -module(nkcollab_call_backends).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start_caller_session/3, start_callee_session/4, set_answer/5]).
+-export([start_caller_session/4, start_callee_session/5, set_accepted/6]).
 
 -include("nkcollab_call.hrl").
 
@@ -32,8 +32,11 @@
 
 
 %% @private
-start_caller_session(CallId, Config, #{srv_id:=SrvId, offer:=Offer}=Call) ->
-    case maps:get(backend, Call, nkmedia_janus) of
+start_caller_session(_CallId, _Config, none, Call) ->
+    {none, Call};
+
+start_caller_session(CallId, Config, Backend, #{srv_id:=SrvId, offer:=Offer}=Call) ->
+    case Backend of
         p2p ->
             Config2 = Config#{
                 backend => p2p, 
@@ -70,13 +73,15 @@ start_caller_session(CallId, Config, #{srv_id:=SrvId, offer:=Offer}=Call) ->
             {error, unknown_backend, Call}
     end;
 
-start_caller_session(_CallId, _Config, Call) ->
+start_caller_session(_CallId, _Config, _Backend, Call) ->
     {error, missing_offer, Call}.
 
 
 %% @private
-start_callee_session(CallId, MasterId, Config, #{srv_id:=SrvId}=Call) ->
-    case maps:get(backend, Call, undefined) of
+start_callee_session(CallId, MasterId, Config, Backend, #{srv_id:=SrvId}=Call) ->
+    case Backend of
+        none ->
+            {none, Call};
         p2p ->
             case Call of
                 #{offer:=Offer} ->
@@ -141,8 +146,11 @@ start_callee_session(CallId, MasterId, Config, #{srv_id:=SrvId}=Call) ->
 
 
 %% @private
-set_answer(_CallId, MasterId, SlaveId, Answer, Call) ->
-    case maps:get(backend, Call, undefined) of
+set_accepted(_CallId, _MasterId, _SlaveId, _Reply, none, Call) ->
+    {ok, Call};
+
+set_accepted(_CallId, MasterId, SlaveId, {answer, Answer}, Backend, Call) ->
+    case Backend of
         p2p ->
             case nkmedia_session:set_answer(MasterId, Answer) of
                 ok ->
@@ -185,4 +193,12 @@ set_answer(_CallId, MasterId, SlaveId, Answer, Call) ->
             end;
         _ ->
             {error, unknown_backend, Call}
-    end.
+    end;
+
+set_accepted(_CallId, _MasterId, _SlaveId, _Reply, _Backend, Call) ->
+    lager:error("Reply: ~p", [_Reply]),
+    {error, invalid_reply, Call}.
+
+
+
+

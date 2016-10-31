@@ -500,8 +500,8 @@ api_client_fun(#api_req{class = <<"core">>, cmd = <<"event">>, data = Data}, Use
     end,
     {ok, #{}, UserData};
 
-api_client_fun(#api_req{cmd= <<"invite">>, data=Data}, UserData) ->
-    #{<<"call_id">>:=CallId, <<"offer">>:=Offer} = Data,
+api_client_fun(#api_req{cmd= <<"invite">>, data=#{<<"offer">>:=Offer}=Data}, UserData) ->
+    #{<<"call_id">>:=CallId} = Data,
     #{<<"sdp">>:=SDP} = Offer,
     lager:info("INVITE: ~p", [UserData]),
     Self = self(),
@@ -518,6 +518,22 @@ api_client_fun(#api_req{cmd= <<"invite">>, data=Data}, UserData) ->
                     {ok, _} = 
                         nkcollab_verto:invite(VertoPid, CallId, #{sdp=>SDP}, Link)
             end
+        end),
+    {ok, #{}, UserData};
+
+api_client_fun(#api_req{cmd= <<"invite">>, data=Data}, UserData) ->
+    #{<<"call_id">>:=CallId} = Data,
+    lager:info("INVITE WITHOUT OFFER: ~p", [UserData]),
+    Self = self(),
+    spawn(
+        fun() ->
+            {ok, _} = 
+                cmd(Self, ringing, #{call_id=>CallId, callee=>#{api_test=>true}}),
+            Time = 1000*crypto:rand_uniform(1, 5),
+            lager:error("Waiting ~p secs", [Time]),
+            timer:sleep(Time),
+            {ok, _} = 
+                cmd(Self, accepted, #{call_id=>CallId, callee=>#{api_test=>true}})
         end),
     {ok, #{}, UserData};
 

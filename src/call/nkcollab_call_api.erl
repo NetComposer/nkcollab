@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([cmd/3]).
--export([expand/3, invite/6]).
+-export([expand/3, invite/4]).
 -export([api_call_hangup /4, api_call_down/3]).
 
 -include_lib("nkservice/include/nkservice.hrl").
@@ -81,9 +81,13 @@ cmd(<<"ringing">>, #api_req{data=Data}, State) ->
 
 cmd(<<"accepted">>, #api_req{srv_id=_SrvId, data=Data}, State) ->
     #{call_id:=CallId} = Data,
-    Answer = maps:get(answer, Data, #{}),
+    Reply = case Data of
+        #{answer:=Answer} -> {answer, Answer};
+        #{offer:=Offer} -> {offer, Offer};
+        _ -> none
+    end,
     Callee = maps:get(callee, Data, #{}),
-    case nkcollab_call:accepted(CallId, {nkcollab_api, self()}, Answer, Callee) of
+    case nkcollab_call:accepted(CallId, {nkcollab_api, self()}, Reply, Callee) of
         {ok, _Pid} ->
             {ok, #{}, State};
         {error, invite_not_found} ->
@@ -229,15 +233,12 @@ expand(_Dest, Acc, Call) ->
 %% Called from nkcollab_call_callbacks
 %% - If the user accepts the call, the user session will be registered as callee
 %% - The user must call accepted or rejected
-invite(CallId, {Type, Pid}, SessId, Offer, Caller, #{srv_id:=SrvId}=Call) ->
-    Data = #{
+invite(CallId, {Type, Pid}, Data, #{srv_id:=SrvId}=Call) ->
+    Data2 = Data#{
         call_id => CallId, 
-        type => Type, 
-        session_id => SessId, 
-        offer => Offer,
-        caller => Caller
+        type => Type
     },
-    case nkservice_api_server:cmd(Pid, media, call, invite, Data) of
+    case nkservice_api_server:cmd(Pid, media, call, invite, Data2) of
         {ok, <<"ok">>, Res} ->
             nkservice_api_server:register(Pid, {nkcollab_call, CallId, self()}), 
             case maps:get(subscribe, Res, true) of

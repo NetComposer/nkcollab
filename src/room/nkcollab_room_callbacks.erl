@@ -31,6 +31,7 @@
 -export([error_code/1]).
 -export([api_cmd/2, api_syntax/4]).
 -export([api_server_reg_down/3, nkmedia_session_reg_event/4, nkmedia_room_reg_event/4]).
+-export([nkcollab_call_start_caller_session/3, nkcollab_call_start_callee_session/4]).
 
 -include("../../include/nkcollab.hrl").
 -include_lib("nkservice/include/nkservice.hrl").
@@ -47,7 +48,7 @@
 
 
 plugin_deps() ->
-    [nkcollab, nkmedia_room].
+    [nkcollab, nkcollab_call, nkmedia_room].
 
 
 plugin_start(Config, #{name:=Name}) ->
@@ -231,4 +232,22 @@ nkmedia_room_reg_event(RoomId, {nkcollab_room, RoomId, _Pid}, Event, _Session) -
     continue;
 
 nkmedia_room_reg_event(_RoomId, _Link, _Event, _Session) ->
+    continue.
+
+
+
+%% ===================================================================
+%% Call callbacks
+%% ===================================================================
+
+nkcollab_call_start_caller_session(_CallId, _Config, Call) -> 
+    case Call of
+        #{caller_link:={nkcollab_room, _, _}} ->
+            {none, Call};
+        _ ->
+            continue
+    end.
+
+
+nkcollab_call_start_callee_session(_CallId, _MasterId, _Config, _Call) ->
     continue.

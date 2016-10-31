@@ -36,7 +36,6 @@ syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
         session_opts(Syntax#{
             dest => any,
             call_id => binary,
-            type => atom,
             caller => any,
             backend => atom,
             events_body => any
@@ -61,6 +60,7 @@ syntax(<<"accepted">>, Syntax, Defaults, Mandatory) ->
         Syntax#{
             call_id => binary,
             callee => map,
+            offer => nkmedia_api_syntax:offer(),
             answer => nkmedia_api_syntax:answer(),
             subscribe => boolean,
             events_body => any

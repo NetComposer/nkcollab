@@ -24,13 +24,13 @@
 
 -export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
 -export([nkcollab_call_init/2, nkcollab_call_terminate/2, 
-         nkcollab_call_expand/3, nkcollab_call_invite/6, 
+         nkcollab_call_expand/3, nkcollab_call_invite/4, 
          nkcollab_call_event/3, nkcollab_call_reg_event/4, 
          nkcollab_call_handle_call/3, nkcollab_call_handle_cast/2, 
          nkcollab_call_handle_info/2,
-         nkcollab_call_start_caller_session/3, 
-         nkcollab_call_start_callee_session/4,
-         nkcollab_call_set_answer/5]).
+         nkcollab_call_start_caller_session/4, 
+         nkcollab_call_start_callee_session/5,
+         nkcollab_call_set_accepted/6]).
 -export([error_code/1]).
 -export([api_cmd/2, api_syntax/4]).
 -export([api_server_reg_down/3]).
@@ -97,8 +97,6 @@ error_code(_) -> continue.
 -type call_id() :: nkcollab_call:id().
 -type dest() :: nkcollab_call:dest().
 -type dest_ext() :: nkcollab_call:dest_ext().
--type caller() :: nkcollab_call:caller().
-% -type callee() :: nkcollab_call:callee().
 -type call() :: nkcollab_call:call().
 -type session_id() :: nkmedia_session:id().
 
@@ -132,61 +130,27 @@ nkcollab_call_expand(Dest, DestExts, Call) ->
 
 
 %% @doc Called for each defined destination to be invited
-%% A new session has already been started.
-%% (You can however start your own session and return its is)
+%% If backend==none, Data may only have a 'callee' field
+%% Otherwhise, a session is already started and data may cointain 
+%% 'session_id' and 'offer'
 %% Then link will be registered with the session, and if it is selected, with the call
 %% If accepted, must call nkcollab_call:ringing/answered/rejected
 %% nkmeida_call will "bridge" the sessions
--spec nkcollab_call_invite(call_id(), dest(), session_id(), nkmedia:offer(), 
-                          caller(), call()) ->
+-spec nkcollab_call_invite(call_id(), dest(), map(), call()) ->
     {ok, nklib:link(), call()} | 
     {ok, nklib:link(), session_id(), call()} | 
     {retry, Secs::pos_integer(), call()} | 
     {remove, call()} | 
     continue().
 
-nkcollab_call_invite(CallId, {nkcollab_api_user, Pid}, SessId, Offer, Caller, Call) ->
-    nkcollab_call_api:invite(CallId, {user, Pid}, SessId, Offer, Caller, Call);
+nkcollab_call_invite(CallId, {nkcollab_api_user, Pid}, Data, Call) ->
+    nkcollab_call_api:invite(CallId, {user, Pid}, Data, Call);
 
-nkcollab_call_invite(CallId, {nkcollab_api_session, Pid}, SessId, Offer, Caller, Call) ->
-    nkcollab_call_api:invite(CallId, {session, Pid}, SessId, Offer, Caller, Call);
+nkcollab_call_invite(CallId, {nkcollab_api_session, Pid}, Data, Call) ->
+    nkcollab_call_api:invite(CallId, {session, Pid}, Data, Call);
 
-nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, Call) ->
+nkcollab_call_invite(_CallId, _Dest, _Data, Call) ->
     {remove, Call}.
-
-
-% %% @doc Called when an outbound invite has been cancelled
-% -spec nkcollab_call_cancelled(call_id(), nklib:link(), call()) ->
-%     {ok, call()} | continue().
-
-% nkcollab_call_cancelled(CallId, {nkcollab_api, Pid}, Call) ->
-%     nkcollab_call_api:cancel(CallId, Pid, Call);
-
-% nkcollab_call_cancelled(_CallId, _Link, Call) ->
-%     {ok, Call}.
-
-
-% %% Called when the calling party has the answer available
-% -spec nkcollab_call_answer(call_id(), nklib:link(), session_id(), nkmedia:answer(), 
-%                           callee(), call()) ->
-%     {ok, call()} | {error, nkservice:error(), call()}.
-
-% nkcollab_call_answer(CallId, {nkcollab_api, Pid}, CallerSessId, Answer, Callee, Call) ->
-%     nkcollab_call_api:answer(CallId, Pid, CallerSessId, Answer, Callee, Call);
-    
-% nkcollab_call_answer(_CallId, _CallerLink, _SessId, _Answer, _Callee, Call) ->
-%     {error, not_implemented, Call}.
-
-
-% %% Called when caller or callee has a new candidate availableanswer available
-% -spec nkcollab_call_candidate(call_id(), nklib:link(), nkcollab:candidate(), call()) ->
-%     {ok, call()} | {error, nkservice:error(), call()}.
-
-% nkcollab_call_candidate(CallId, {nkcollab_api, Pid}, Candidate, Call) ->
-%     nkcollab_call_api:candidate(CallId, Pid, Candidate, Call);
-
-% nkcollab_call_candidate(_CallId, _CallerLink, _Candidate, Call) ->
-%     {error, not_implemented, Call}.
 
 
 %% @doc Called when the status of the call changes
@@ -241,34 +205,36 @@ nkcollab_call_handle_info(Msg, Call) ->
 
 %% @doc Called when the Call must start the 'caller' session
 %% Implemented by backends
--spec nkcollab_call_start_caller_session(call_id(), nkmedia_session:config(), call()) ->
-    {ok, nkmedia_session:id(), pid(), call()} | 
+-spec nkcollab_call_start_caller_session(call_id(), nkmedia_session:config(), 
+                                         nkmedia:backend()|none, call()) ->
+    {none, call()} | {ok, nkmedia_session:id(), pid(), call()} | 
     {error, nkservice:error(), call()} |
     continue().
 
-nkcollab_call_start_caller_session(CallId, Config, Call) -> 
-    nkcollab_call_backends:start_caller_session(CallId, Config, Call).
+nkcollab_call_start_caller_session(CallId, Config, Backend, Call) -> 
+    nkcollab_call_backends:start_caller_session(CallId, Config, Backend, Call).
 
 
 %% @doc Called when the Call must start a 'callee' session
 %% Implemented by backends
 -spec nkcollab_call_start_callee_session(call_id(), nkmedia_session:id(), 
-                                        nkmedia_session:config(), call()) ->
+                                        nkmedia_session:config(), nkmedia:backend()|none,
+                                        call()) ->
     {ok, nkmedia_session:id(), pid(), nkmedia:offer(), call()} | 
     {error, nkservice:error(), call()} |
     continue().
 
-nkcollab_call_start_callee_session(CallId, MasterId, Config, Call) ->
-    nkcollab_call_backends:start_callee_session(CallId, MasterId, Config, Call).
+nkcollab_call_start_callee_session(CallId, MasterId, Config, Backend, Call) ->
+    nkcollab_call_backends:start_callee_session(CallId, MasterId, Config, Backend, Call).
 
 %% @doc Called when the call has both sessions and must be connected
 %% Implemented by backend
--spec nkcollab_call_set_answer(call_id(), session_id(), session_id(), 
-                              nkmedia:answer(), call()) ->
+-spec nkcollab_call_set_accepted(call_id(), session_id(), session_id(), 
+                              nkmedia:answer(), nkmedia:backend()|none, call()) ->
     {ok, call()} | {error, nkservice:error(), term()} | continue().
 
-nkcollab_call_set_answer(CallId, MasterId, SlaveId, Answer, Call) ->
-    nkcollab_call_backends:set_answer(CallId, MasterId, SlaveId, Answer, Call).
+nkcollab_call_set_accepted(CallId, MasterId, SlaveId, Answer, Backend, Call) ->
+    nkcollab_call_backends:set_accepted(CallId, MasterId, SlaveId, Answer, Backend, Call).
 
 
 

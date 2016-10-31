@@ -32,7 +32,7 @@
          nkcollab_verto_dtmf/4, nkcollab_verto_terminate/2,
          nkcollab_verto_handle_call/3, nkcollab_verto_handle_cast/2,
          nkcollab_verto_handle_info/2]).
--export([nkcollab_call_expand/3, nkcollab_call_invite/6, 
+-export([nkcollab_call_expand/3, nkcollab_call_invite/4, 
          nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
@@ -162,7 +162,8 @@ nkcollab_verto_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, Verto) -
 % an answer for an invite we received, we set the answer in the call
 nkcollab_verto_answer(CallId, {nkcollab_call, CallId, _Pid}, Answer, Verto) ->
     Id = {nkcollab_verto, CallId, self()},
-    case nkcollab_call:accepted(CallId, Id, Answer, #{module=>nkcollab_verto}) of
+    Callee = #{module=>nkcollab_verto},
+    case nkcollab_call:accepted(CallId, Id, {answer, Answer}, Callee) of
         {ok, _} ->
             {ok, Verto};
         {error, Error} ->
@@ -314,12 +315,12 @@ nkcollab_call_expand(_Dest, _Acc, _Call) ->
 %%   (to be able to send BYEs)
 %% - The Verto session registers with the call as {nkcollab_verto, CallId, Pid}, 
 %%   and will send hangups and rejected using this
-nkcollab_call_invite(CallId, {nkcollab_verto, Pid}, _SessId, Offer, _Caller, Call) ->
+nkcollab_call_invite(CallId, {nkcollab_verto, Pid}, #{offer:=Offer}, Call) ->
     CallLink = {nkcollab_call, CallId, self()},
     {ok, VertoLink} = nkcollab_verto:invite(Pid, CallId, Offer, CallLink),
     {ok, VertoLink, Call};
 
-nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, _Call) ->
+nkcollab_call_invite(_CallId, _Dest, _Data, _Call) ->
     continue.
 
 
@@ -338,8 +339,9 @@ nkcollab_call_reg_event(CallId, {nkcollab_verto, CallId, Pid}=Link, Event, _Call
             end;
         {session_cancelled, _SessId, Link} ->
             nkcollab_verto:hangup(Pid, CallId, originator_cancel);
-        {session_status, _SessId, Status, Data, Link} ->
-            lager:notice("Verto status: ~p ~p", [Status, Data]);
+        {session_status, _SessId, _Status, _Data, Link} ->
+            % lager:notice("Verto status: ~p ~p", [_Status, _Data]),
+            ok;
         {hangup, Reason} ->
             nkcollab_verto:hangup(Pid, CallId, Reason);
         _ ->

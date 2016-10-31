@@ -29,6 +29,7 @@
          add_listener/4, remove_listener/3]).
 -export([update_meta/3, update_media/3, update_all_media/2]).
 -export([broadcast/3, get_all_msgs/1]).
+-export([invite/3]).
 -export([send_room_info/2, send_session_info/3, send_member_info/3]).
 -export([media_session_event/3, media_room_event/2]).
 -export([register/2, unregister/2, get_all/0]).
@@ -328,6 +329,16 @@ get_all_msgs(Id) ->
     do_call(Id, get_all_msgs).
 
 
+
+%% @private
+-spec invite(id(), binary(), map()) ->
+    {ok, [msg()]} | {error, term()}.
+
+invite(Id, Dest, Meta) ->
+    do_call(Id, {invite, Dest, Meta}).
+
+
+
 %% @doc Registers a process with the room
 -spec register(id(), nklib:link()) ->     
     {ok, pid()} | {error, nkservice:error()}.
@@ -619,6 +630,16 @@ handle_call(get_all_msgs, _From, #state{msgs=Msgs}=State) ->
     restart_timer(State),
     Reply = [Msg || {_Id, Msg} <- orddict:to_list(Msgs)],
     {reply, {ok, Reply}, State};
+
+handle_call({invite, Dest, Meta}, _From, State) ->
+    #state{srv_id=SrvId, id=RoomId, backend=Backend} = State,
+    Config = #{
+        backend => Backend,
+        caller_link => {?MODULE, RoomId, self()},
+        caller => Meta
+    },
+    {ok, CallId, _CallPid} = nkcollab_call:start(SrvId, Dest, Config),
+    {reply, {ok, CallId}, State};
 
 handle_call(get_state, _From, State) ->
     {reply, State, State};

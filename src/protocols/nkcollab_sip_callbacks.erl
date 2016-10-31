@@ -30,7 +30,7 @@
          nkcollab_sip_invite_answered/2]).
 -export([sip_get_user_pass/4, sip_authorize/3]).
 -export([sip_register/2, sip_invite/2, sip_reinvite/2, sip_cancel/3, sip_bye/2]).
--export([nkcollab_call_expand/3, nkcollab_call_invite/6, nkcollab_call_reg_event/4]).
+-export([nkcollab_call_expand/3, nkcollab_call_invite/4, nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -151,8 +151,8 @@ nkcollab_sip_invite(SrvId, Dest, Offer, _Req, _Call) ->
 -spec nkcollab_sip_invite_ringing(nklib:link(), nkmedia:answer()) ->
     ok.
 
-nkcollab_sip_invite_ringing({nkcollab_call, CallId, _Pid}, Answer) ->
-    nkcollab_call:ringing(CallId, {nkcollab_sip, self()}, Answer);
+nkcollab_sip_invite_ringing({nkcollab_call, CallId, _Pid}, _Answer) ->
+    nkcollab_call:ringing(CallId, {nkcollab_sip, self()}, #{});
 
 nkcollab_sip_invite_ringing(_Id, _Answer) ->
     ok.
@@ -178,7 +178,8 @@ nkcollab_sip_invite_rejected(_Id) ->
 
 nkcollab_sip_invite_answered({nkcollab_call, CallId, _Pid}, Answer) ->
     Callee = #{info=>nkcollab_sip},
-    case nkcollab_call:accepted(CallId, {nkcollab_sip, self()}, Answer, Callee) of
+    Reply = {answer, Answer},
+    case nkcollab_call:accepted(CallId, {nkcollab_sip, self()}, Reply, Callee) of
         {ok, _Pid} -> 
             ok;
         {error, Error} ->
@@ -339,7 +340,7 @@ nkcollab_call_expand(_Dest, _Acc, _Call) ->
 
 
 %% @private Called when a call want to INVITE a SIP endpoint
-nkcollab_call_invite(CallId, {nkcollab_sip, Uri}, _SessId, Offer, _Caller, Call) ->
+nkcollab_call_invite(CallId, {nkcollab_sip, Uri}, #{offer:=Offer}, Call) ->
     #{srv_id:=SrvId} = Call,
     Link =  {nkcollab_call, CallId, self()},
     case nkcollab_sip:send_invite(SrvId, Uri, Offer, Link, []) of
@@ -350,7 +351,7 @@ nkcollab_call_invite(CallId, {nkcollab_sip, Uri}, _SessId, Offer, _Caller, Call)
             {remove, Call}
     end;
 
-nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, _Call) ->
+nkcollab_call_invite(_CallId, _Dest, _Data, _Call) ->
     continue.
 
 

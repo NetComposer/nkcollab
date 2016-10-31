@@ -30,7 +30,7 @@
          nkcollab_janus_handle_call/3, nkcollab_janus_handle_cast/2,
          nkcollab_janus_handle_info/2]).
 -export([error_code/1]).
--export([nkcollab_call_expand/3, nkcollab_call_invite/6, 
+-export([nkcollab_call_expand/3, nkcollab_call_invite/4, 
          nkcollab_call_reg_event/4]).
 -export([nkmedia_session_reg_event/4]).
 
@@ -147,7 +147,8 @@ nkcollab_janus_answer(_CallId, {nkmedia_session, SessId, _Pid}, Answer, Janus) -
 % an answer for an invite we received, we set the answer in the call
 nkcollab_janus_answer(_CallId, {nkcollab_call, CallId, _Pid}, Answer, Janus) ->
     Id = {nkcollab_janus, CallId, self()},
-    case nkcollab_call:accepted(CallId, Id, Answer, #{module=>nkcollab_janus}) of
+    Callee = #{module=>nkcollab_janus},
+    case nkcollab_call:accepted(CallId, Id, {answer, Answer}, Callee) of
         {ok, _} ->
             {ok, Janus};
         {error, Error} ->
@@ -302,12 +303,12 @@ nkcollab_call_expand(_Dest, _Acc, _Call) ->
 
 %% We register with janus as {nkcollab_janus_call, CallId, PId},
 %% and with the call as {nkcollab_janus, Pid}
-nkcollab_call_invite(CallId, {nkcollab_janus, Pid}, _SessId, Offer, _Caller, Call) ->
+nkcollab_call_invite(CallId, {nkcollab_janus, Pid}, #{offer:=Offer}, Call) ->
     CallLink = {nkcollab_call, CallId, self()},
     {ok, JanusLink} = nkcollab_janus:invite(Pid, CallId, Offer, CallLink),
     {ok, JanusLink, Call};
 
-nkcollab_call_invite(_CallId, _Dest, _SessId, _Offer, _Caller, _Call) ->
+nkcollab_call_invite(_CallId, _Dest, _Data, _Call) ->
     continue.
 
 

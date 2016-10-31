@@ -1,9 +1,8 @@
 # CALL Application
 
+This application offers an easy to use signalling on top of NkMEDIA, so that you can send _calls_ from any supported client to any other supported endpoint.
 
-This plugin offers an easy to use signalling on top of NkCOLLAB, so that you can send _calls_ from any supported client to any other supported endpoint.
-
-You can call from a registered user, SIP endpoint or Verto session to any other of them. You only need to supply the _offer_ and destination, and NkCOLLAB will locate all endpoints beloging to that destination, and wilk start parallel sessions for all of them. The first one that answers is connected to the caller. 
+You can call from a registered user, SIP endpoint or Verto session to any other of them. You only need to supply the _offer_ and destination, and NkCOLLAB will locate all endpoints beloging to that destination, and will start parallel sessions for all of them. The first one that answers is connected to the caller. 
 
 * [**Commands**](#commands)
   * [`create`](#create): Create a new call
@@ -26,29 +25,22 @@ All commands must have
 }
 ```
 
-See also each backend documentation:
-
-* [nkmedia_janus](janus.md#calls)
-* [nkmedia_fs](fs.md#calls)
-* [nkmedia_kms](kms.md#calls)
-
-Also, for Erlang developers, you can have a look at the command [syntax specification](../src/nkcollab_call_api_syntax.erl) and [command implementation](../src/nkcollab_call_api.erl).
+Also, for Erlang developers, you can have a look at the command [syntax specification](../src/nkcollab_call_api_syntax.erl), [command implementation](../src/nkcollab_call_api.erl) and [event implementation](../src/nkcollab_call_api_events.erl)
 
 
 # Commands
 
 ## create
 
-Starts a new call. You must supply a `callee` and an `offer`. Available fields are:
+Starts a new call. You must supply a `dest` and, for all _backends_ except `none`, an `offer`. Available fields are:
 
 Field|Default|Description
 ---|---|---
+dest|(mandatory)|Destination specification (see [destinations](#destinations))
+offer|-|Offer to use (see sample bellow)
 call_id|(generated)|Call ID
-callee|(mandatory)|Callee specification (see [destinations](#destinations))
-offer|(mandatory)|Offer to use
-type|(mandatory)|Call type (see [destinations](#destinations))
-caller|{}|Caller specification (for notifications)
-backend|p2p|Backend to use (see each backend documentation)
+caller|{}|Caller specification (any JSON object, will be used in notifications)
+backend|`none`|Backend to use (see each backend documentation)
 no_offer_trickle_ice|false|Forces consolidation of offer candidates in SDP
 no_answer_trickle_ice|false|Forces consolidation of answer candidates in SDP
 trickle_ice_timeout|5000|Timeout for Trickle ICE before consolidating candidates
@@ -56,9 +48,9 @@ sdp_type|"webrtc"|Type of offer or answer SDP to generate (`webrtc` or `rtp`)
 subscribe|true|Subscribe to call events. Use `false` to avoid automatic subscription.
 event_body|{}|Body to receive in all automatic events.
 
-NkCOLLAB will create a _caller_ media session (type will be dependant of plugin). Some plugins will offer the answer inmediately, while other will need the answer from the remote party.
+For all backends (except `none`) NkCOLLAB will create a _caller_ media session. Some backends (like nkmedia_fs and nkmedia_kms) will offer the answer inmediately, while others (like nkmedia_janus) will need the answer from the remote party before offering the answer to the calling party.
 
-NkCOLLAB will then _resolve_ the callee to a set of [destinations](#destinations), starting a new session for each and calling each one in parallel. Each callee can use the [`ringing`](#ringing), [`rejected`](#rejected) and [`accepted`](#accepted) commands.
+NkCOLLAB will then _resolve_ the destionation to a set of [endpoints](#destinations), starting a new media session for each one and calling each one in parallel. Each callee can use the [`ringing`](#ringing), [`rejected`](#rejected) and [`accepted`](#accepted) commands.
 
 
 **Sample**
@@ -69,8 +61,7 @@ NkCOLLAB will then _resolve_ the callee to a set of [destinations](#destinations
 	subclass: "call"
 	cmd: "create",
 	data: {
-		type: "user",
-		callee: "user@domain.com"
+		dest: "user@domain.com"
 		offer: { 
 			sdp: "v=0.." 
 		},
@@ -95,10 +86,7 @@ NkCOLLAB will then _resolve_ the callee to a set of [destinations](#destinations
 ```
 
 
-NkCOLLAB will locate all destinations (for example, por _user_ type, locating all sessions belongig to the user) and will send an _invite_ to each of them in parallel scheme with its offer.
-
-You must reply inmediately (before prompting the user or ringing) either accepting the call (returning `result: "ok"`) or rejecting it with `result: "error"`. From all accepted calls, it is expected that the callee must call [`rejected`](#rejected) or [`accepted`](#accepted).
-
+NkCOLLAB will locate all called endpoints (for example, locating all sessions belongig to the user) and will send an _invite_ to each of them in a parallel scheme, along with their offers.
 
 ```js
 {
@@ -107,7 +95,6 @@ You must reply inmediately (before prompting the user or ringing) either accepti
 	cmd: "invite",
 	data: {
 		call_id: "8b35b132-375f-b3e5-a978-28f07603cda8",
-		type: "user",
 		offer: {
 			sdp: "v=0..",
 		},
@@ -132,6 +119,7 @@ You must reply inmediately (before prompting the user or ringing) either accepti
 }
 ```
 
+You must reply inmediately (before prompting the user or ringing), either accepting the call (returning `result: "ok"`) or rejecting it with `result: "error"`. Later on, from all accepted calls, it is expected that the callee must call [`rejected`](#rejected) or [`accepted`](#accepted).
 
 
 If you reply `accepted`, you can also include the following fields:
@@ -178,6 +166,12 @@ Notify call ringing
 
 After receiving an invite, you can notify that the call is ringing:
 
+Field|Default|Description
+---|---|---|---
+call_id|(mandatory)|Call ID
+callee|-|Optional JSON object with callee info
+
+
 ```js
 {
 	class: "collab",
@@ -202,7 +196,7 @@ Field|Default|Description
 ---|---|---|---
 call_id|(mandatory)|Call ID
 answer|(mandatory|Answer for the caller
-
+callee|-|Optional JSON object with callee info
 
 **Sample**
 
@@ -215,6 +209,9 @@ answer|(mandatory|Answer for the caller
 		call_id: "8b35b132-375f-b3e5-a978-28f07603cda8",
 		answer: {
 			sdp: "..."
+		},
+		callee: {
+			name: "It's me"
 		}
 	},
 	tid: 2000
@@ -260,7 +257,6 @@ When the client has no more candidates to send, it should use this command to in
 
 
 ## Events
-
 
 All events have the following structure:
 
