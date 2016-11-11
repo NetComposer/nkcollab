@@ -115,12 +115,14 @@ plugin_deps() ->
 
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, User, "p1", Fun, Data),
+    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
     C.
 
 connect2(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, User, "p1", Fun, Data),
+    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
     C.
 
 get_client() ->
@@ -244,7 +246,7 @@ gelf(C, Src, Short) ->
 
 
 %% @doc Called on login
-api_server_login(#{<<"user">>:=User}, _SessId, State) ->
+api_server_login(#{<<"user_id">>:=User}, _SessId, State) ->
     nkservice_api_server:start_ping(self(), 60),
     {true, User, State};
 
