@@ -32,7 +32,7 @@
          nkcollab_call_start_callee_session/5,
          nkcollab_call_set_accepted/6]).
 -export([error_code/1]).
--export([api_cmd/2, api_syntax/4]).
+-export([api_server_cmd/2, api_server_syntax/4]).
 -export([api_server_reg_down/3]).
 -export([nkmedia_session_reg_event/4]).
 
@@ -243,19 +243,20 @@ nkcollab_call_set_accepted(CallId, MasterId, SlaveId, Answer, Backend, Call) ->
 %% ===================================================================
 
 %% @private
-api_cmd(#api_req{class = <<"collab">>, subclass = <<"call">>, cmd=Cmd}=Req, State) ->
+api_server_cmd(
+    #api_req{class1=collab, subclass1=call, cmd1=Cmd}=Req, State) ->
     nkcollab_call_api:cmd(Cmd, Req, State);
 
-api_cmd(_Req, _State) ->
+api_server_cmd(_Req, _State) ->
     continue.
 
 
 %% @privat
-api_syntax(#api_req{class = <<"collab">>, subclass = <<"call">>, cmd=Cmd}, 
-           Syntax, Defaults, Mandatory) ->
+api_server_syntax(#api_req{class1=collab, subclass1=call, cmd1=Cmd}, 
+                  Syntax, Defaults, Mandatory) ->
     nkcollab_call_api_syntax:syntax(Cmd, Syntax, Defaults, Mandatory);
     
-api_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
+api_server_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
     continue.
 
 

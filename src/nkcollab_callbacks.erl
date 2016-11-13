@@ -25,8 +25,7 @@
 
 -export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
 -export([error_code/1]).
--export([api_cmd/2, api_syntax/4]).
--export([api_server_cmd/2]).
+-export([api_server_cmd/2, api_server_syntax/4]).
 
 % -include("nkcollab.hrl").
 -include_lib("nkservice/include/nkservice.hrl").
@@ -80,36 +79,22 @@ error_code(_) -> continue.
 
 
 %% ===================================================================
-%% API CMD
+%% API Server
 %% ===================================================================
 
 %% @private
-api_cmd(#api_req{class = <<"collab">>}=Req, State) ->
-	#api_req{subclass=Sub, cmd=Cmd} = Req,
+api_server_cmd(#api_req{class1=collab, subclass1=Sub, cmd1=Cmd}=Req, State) ->
 	nkcollab_api:cmd(Sub, Cmd, Req, State);
 
-api_cmd(_Req, _State) ->
+api_server_cmd(_Req, _State) ->
 	continue.
 
 
 %% @private
-api_syntax(#api_req{class = <<"collab">>}=Req, Syntax, Defaults, Mandatory) ->
-	#api_req{subclass=Sub, cmd=Cmd} = Req,
+api_server_syntax(#api_req{class1=collab}=Req, Syntax, Defaults, Mandatory) ->
+	#api_req{subclass1=Sub, cmd1=Cmd} = Req,
 	nkcollab_api_syntax:syntax(Sub, Cmd, Syntax, Defaults, Mandatory);
 	
-api_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
+api_server_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
 	continue.
-
-
-
-% ===================================================================
-%% API Server Callbacks
-%% ===================================================================
-
-%% @private Launch class media (api_cmd/2 will be called)
-api_server_cmd(#api_req{class = <<"collab">>}=Req, State) ->
-	nkservice_api:launch(Req, State);
-	
-api_server_cmd(_Req, _State) ->
-    continue.
 

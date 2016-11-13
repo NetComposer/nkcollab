@@ -29,8 +29,8 @@
          nkcollab_room_handle_call/3, nkcollab_room_handle_cast/2, 
          nkcollab_room_handle_info/2]).
 -export([error_code/1]).
--export([api_cmd/2, api_syntax/4]).
--export([api_server_reg_down/3, nkmedia_session_reg_event/4, nkmedia_room_reg_event/4]).
+-export([api_server_cmd/2, api_server_syntax/4, api_server_reg_down/3]).
+-export([nkmedia_session_reg_event/4, nkmedia_room_reg_event/4]).
 -export([nkcollab_call_start_caller_session/3, nkcollab_call_start_callee_session/4]).
 
 -include("../../include/nkcollab.hrl").
@@ -174,29 +174,27 @@ nkcollab_room_handle_info(Msg, Room) ->
 
 
 %% ===================================================================
-%% API CMD
+%% API Server
 %% ===================================================================
 
+
 %% @private
-api_cmd(#api_req{class = <<"collab">>, subclass = <<"room">>, cmd=Cmd}=Req, State) ->
+api_server_cmd(
+    #api_req{class1=collab, subclass1=room, cmd1=Cmd}=Req, State) ->
     nkcollab_room_api:cmd(Cmd, Req, State);
 
-api_cmd(_Req, _State) ->
+api_server_cmd(_Req, _State) ->
     continue.
 
 
 %% @privat
-api_syntax(#api_req{class = <<"collab">>, subclass = <<"room">>, cmd=Cmd}, 
-           Syntax, Defaults, Mandatory) ->
+api_server_syntax(#api_req{class1=collab, subclass1=room, cmd1=Cmd}, 
+                  Syntax, Defaults, Mandatory) ->
     nkcollab_room_api_syntax:syntax(Cmd, Syntax, Defaults, Mandatory);
     
-api_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
+api_server_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
     continue.
 
-
-%% ===================================================================
-%% API Server
-%% ===================================================================
 
 %% @private
 api_server_reg_down({nkcollab_room, RoomId, _Pid}, Reason, State) ->

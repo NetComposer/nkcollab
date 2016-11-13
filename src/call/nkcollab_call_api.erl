@@ -43,7 +43,7 @@
 %%   (api_server_reg_down() -> api_call_down() here)
 %% It also subscribes the API session to events
 cmd(<<"create">>, Req, State) ->
-    #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
+    #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
     #{dest:=Dest} = Data,
     Config = Data#{
         caller_link => {nkcollab_api, self()},

@@ -240,7 +240,7 @@ api_room_down(RoomId, Reason, State) ->
 %% ===================================================================
 
 create_member(Role, Req, State) ->
-    #api_req{srv_id=SrvId, data=Data, user=User, session=UserSession} = Req,
+    #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
     #{room_id:=RoomId} = Data,
     Config = Data#{
         register => {nkcollab_api, self()},
