@@ -83,7 +83,7 @@ error_code(_) -> continue.
 %% ===================================================================
 
 %% @private
-api_server_cmd(#api_req{class1=collab, subclass1=Sub, cmd1=Cmd}=Req, State) ->
+api_server_cmd(#api_req{class=collab, subclass=Sub, cmd=Cmd}=Req, State) ->
 	nkcollab_api:cmd(Sub, Cmd, Req, State);
 
 api_server_cmd(_Req, _State) ->
@@ -91,8 +91,8 @@ api_server_cmd(_Req, _State) ->
 
 
 %% @private
-api_server_syntax(#api_req{class1=collab}=Req, Syntax, Defaults, Mandatory) ->
-	#api_req{subclass1=Sub, cmd1=Cmd} = Req,
+api_server_syntax(#api_req{class=collab}=Req, Syntax, Defaults, Mandatory) ->
+	#api_req{subclass=Sub, cmd=Cmd} = Req,
 	nkcollab_api_syntax:syntax(Sub, Cmd, Syntax, Defaults, Mandatory);
 	
 api_server_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->

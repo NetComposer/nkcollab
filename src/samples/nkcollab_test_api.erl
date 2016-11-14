@@ -501,7 +501,7 @@ start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
 
 
 %% @private
-api_client_fun(#api_req{class1=core, cmd1=event, data = Data}, UserData) ->
+api_client_fun(#api_req{class=core, cmd=event, data = Data}, UserData) ->
     #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
     Sub = maps:get(<<"subclass">>, Data, <<"*">>),

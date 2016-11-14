@@ -180,7 +180,7 @@ nkcollab_room_handle_info(Msg, Room) ->
 
 %% @private
 api_server_cmd(
-    #api_req{class1=collab, subclass1=room, cmd1=Cmd}=Req, State) ->
+    #api_req{class=collab, subclass=room, cmd=Cmd}=Req, State) ->
     nkcollab_room_api:cmd(Cmd, Req, State);
 
 api_server_cmd(_Req, _State) ->
@@ -188,7 +188,7 @@ api_server_cmd(_Req, _State) ->
 
 
 %% @privat
-api_server_syntax(#api_req{class1=collab, subclass1=room, cmd1=Cmd}, 
+api_server_syntax(#api_req{class=collab, subclass=room, cmd=Cmd}, 
                   Syntax, Defaults, Mandatory) ->
     nkcollab_room_api_syntax:syntax(Cmd, Syntax, Defaults, Mandatory);
     

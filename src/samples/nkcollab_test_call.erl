@@ -446,7 +446,7 @@ start_call(Ws, Callee, Config) ->
 
 
 %% @private
-api_client_fun(#api_req{class1=core, cmd1=event, data=Data}, UserData) ->
+api_client_fun(#api_req{class=core, cmd=event, data=Data}, UserData) ->
     #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
     Sub = maps:get(<<"subclass">>, Data, <<"*">>),
@@ -497,7 +497,7 @@ api_client_fun(#api_req{class1=core, cmd1=event, data=Data}, UserData) ->
     end,
     {ok, #{}, UserData};
 
-api_client_fun(#api_req{cmd1=invite, data=#{<<"offer">>:=Offer}=Data}, UserData) ->
+api_client_fun(#api_req{cmd=invite, data=#{<<"offer">>:=Offer}=Data}, UserData) ->
     #{<<"call_id">>:=CallId} = Data,
     #{<<"sdp">>:=SDP} = Offer,
     lager:info("INVITE: ~p", [UserData]),
@@ -518,7 +518,7 @@ api_client_fun(#api_req{cmd1=invite, data=#{<<"offer">>:=Offer}=Data}, UserData)
         end),
     {ok, #{}, UserData};
 
-api_client_fun(#api_req{cmd1=invite, data=Data}, UserData) ->
+api_client_fun(#api_req{cmd=invite, data=Data}, UserData) ->
     #{<<"call_id">>:=CallId} = Data,
     lager:info("INVITE WITHOUT OFFER: ~p", [UserData]),
     Self = self(),
@@ -534,7 +534,7 @@ api_client_fun(#api_req{cmd1=invite, data=Data}, UserData) ->
         end),
     {ok, #{}, UserData};
 
-api_client_fun(#api_req{subclass1=call, cmd1=hangup, data=Data}, UserData) ->
+api_client_fun(#api_req{subclass=call, cmd=hangup, data=Data}, UserData) ->
     #{<<"call_id">>:=_CallId} = Data,
     lager:error("HANGUP ~p", [UserData]),
     {ok, #{}, UserData};

@@ -244,7 +244,7 @@ nkcollab_call_set_accepted(CallId, MasterId, SlaveId, Answer, Backend, Call) ->
 
 %% @private
 api_server_cmd(
-    #api_req{class1=collab, subclass1=call, cmd1=Cmd}=Req, State) ->
+    #api_req{class=collab, subclass=call, cmd=Cmd}=Req, State) ->
     nkcollab_call_api:cmd(Cmd, Req, State);
 
 api_server_cmd(_Req, _State) ->
@@ -252,7 +252,7 @@ api_server_cmd(_Req, _State) ->
 
 
 %% @privat
-api_server_syntax(#api_req{class1=collab, subclass1=call, cmd1=Cmd}, 
+api_server_syntax(#api_req{class=collab, subclass=call, cmd=Cmd}, 
                   Syntax, Defaults, Mandatory) ->
     nkcollab_call_api_syntax:syntax(Cmd, Syntax, Defaults, Mandatory);
     
