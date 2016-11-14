@@ -31,7 +31,7 @@
 %% Syntax
 %% ===================================================================
 
-syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
+syntax(create, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             class => {enum, [sfu]},
@@ -47,35 +47,35 @@ syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
         Mandatory
     };
 
-syntax(<<"destroy">>, Syntax, Defaults, Mandatory) ->
+syntax(destroy, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{room_id => binary},
         Defaults,
         [room_id|Mandatory]
     };
 
-syntax(<<"get_list">>, Syntax, Defaults, Mandatory) ->
+syntax(get_list, Syntax, Defaults, Mandatory) ->
     {
         Syntax,
         Defaults, 
         Mandatory
     };
 
-syntax(<<"get_info">>, Syntax, Defaults, Mandatory) ->
+syntax(get_info, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{room_id => binary},
         Defaults, 
         [room_id|Mandatory]
     };
 
-syntax(<<"get_presenters">>, Syntax, Defaults, Mandatory) ->
+syntax(get_presenters, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{room_id => binary},
         Defaults, 
         [room_id|Mandatory]
     };
 
-syntax(<<"create_presenter">>, Syntax, Defaults, Mandatory) ->
+syntax(create_presenter, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
@@ -86,7 +86,7 @@ syntax(<<"create_presenter">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(<<"get_viewers">>, Syntax, Defaults, Mandatory) ->
+syntax(get_viewers, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{room_id => binary},
         Defaults, 
@@ -94,7 +94,7 @@ syntax(<<"get_viewers">>, Syntax, Defaults, Mandatory) ->
     };
 
 
-syntax(<<"create_viewer">>, Syntax, Defaults, Mandatory) ->
+syntax(create_viewer, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
@@ -107,7 +107,7 @@ syntax(<<"create_viewer">>, Syntax, Defaults, Mandatory) ->
         [room_id, presenter_id|Mandatory]
     };
 
-syntax(<<"destroy_member">>, Syntax, Defaults, Mandatory) ->
+syntax(destroy_member, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -117,7 +117,7 @@ syntax(<<"destroy_member">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"update_publisher">>, Syntax, Defaults, Mandatory) ->
+syntax(update_publisher, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
@@ -127,7 +127,7 @@ syntax(<<"update_publisher">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"remove_publisher">>, Syntax, Defaults, Mandatory) ->
+syntax(remove_publisher, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -137,7 +137,7 @@ syntax(<<"remove_publisher">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"add_listener">>, Syntax, Defaults, Mandatory) ->
+syntax(add_listener, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             room_id => binary,
@@ -148,7 +148,7 @@ syntax(<<"add_listener">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"remove_listener">>, Syntax, Defaults, Mandatory) ->
+syntax(remove_listener, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -160,7 +160,7 @@ syntax(<<"remove_listener">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"update_meta">>, Syntax, Defaults, Mandatory) ->
+syntax(update_meta, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -171,7 +171,7 @@ syntax(<<"update_meta">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"update_media">>, Syntax, Defaults, Mandatory) ->
+syntax(update_media, Syntax, Defaults, Mandatory) ->
     {
         media_opts(Syntax#{
             room_id => binary,
@@ -181,7 +181,7 @@ syntax(<<"update_media">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id|Mandatory]
     };
 
-syntax(<<"update_all_media">>, Syntax, Defaults, Mandatory) ->
+syntax(update_all_media, Syntax, Defaults, Mandatory) ->
     {
         media_opts(Syntax#{
             room_id => binary
@@ -190,7 +190,7 @@ syntax(<<"update_all_media">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(<<"send_broadcast">>, Syntax, Defaults, Mandatory) ->
+syntax(send_broadcast, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -201,7 +201,7 @@ syntax(<<"send_broadcast">>, Syntax, Defaults, Mandatory) ->
         [room_id, member_id, msg|Mandatory]
     };
 
-syntax(<<"get_all_broadcasts">>, Syntax, Defaults, Mandatory) ->
+syntax(get_all_broadcasts, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary
@@ -210,14 +210,14 @@ syntax(<<"get_all_broadcasts">>, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(<<"set_answer">>, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(<<"set_answer">>, Syntax, Defaults, Mandatory);
+syntax(set_answer, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(set_answer, Syntax, Defaults, Mandatory);
 
-syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory);
+syntax(set_candidate, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(set_candidate, Syntax, Defaults, Mandatory);
 
-syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory);
+syntax(set_candidate_end, Syntax, Defaults, Mandatory) ->
+    nkmedia_api_syntax:syntax(set_candidate_end, Syntax, Defaults, Mandatory);
 
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.

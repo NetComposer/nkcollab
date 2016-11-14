@@ -100,8 +100,7 @@ plugin_deps() ->
         nkmedia_janus, nkmedia_fs, nkmedia_kms, 
         nkmedia_janus_proxy, nkmedia_kms_proxy,
         nkcollab_verto, nkcollab_janus, nkcollab_sip,
-        nkservice_api_gelf,
-        nkmedia_room_msglog
+        nkservice_api_gelf
     ].
 
 
@@ -115,13 +114,13 @@ plugin_deps() ->
 
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
     {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
     C.
 
 connect2(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
     {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
     C.
 
@@ -131,53 +130,61 @@ get_client() ->
 
 
 %% Session
-media(C, S, Data) ->
-    cmd(C, S, update_media, Data).
+media(S, Data) ->
+    cmd(S, update_media, Data).
 
-recorder(C, S, Data) ->
-    cmd(C, S, recorder_action, Data).
+recorder(S, Data) ->
+    cmd(S, recorder_action, Data).
 
-player(C, S, Data) ->
-    cmd(C, S, player_action, Data).
+player(S, Data) ->
+    cmd(S, player_action, Data).
 
-room(C, S, Data) ->
-    cmd(C, S, room_action, Data).
+room(S, Data) ->
+    cmd(S, room_action, Data).
 
-type(C, S, Type, Data) ->
-    cmd(C, S, set_type, Data#{type=>Type}).
+type(S, Type, Data) ->
+    cmd(S, set_type, Data#{type=>Type}).
 
 % get_offer, get_answer, get_info, destroy, get_list, switch
-cmd(C, SessId, Cmd) ->
-    cmd(C, SessId, Cmd, #{}).
+cmd(SessId, Cmd, Data) ->
+    Pid = get_client(),
+    cmd(Pid, SessId, Cmd, Data).
 
-cmd(C, SessId, Cmd, Data) ->
+cmd(Pid, SessId, Cmd, Data) ->
     Data2 = Data#{session_id=>SessId},
-    nkservice_api_client:cmd(C, media, session, Cmd, Data2).
+    nkservice_api_client:cmd(Pid, media, session, Cmd, Data2).
 
-candidate(C, SessId, #candidate{last=true}) ->
-    cmd(C, SessId, set_candidate_end, #{});
+candidate(Pid, SessId, #candidate{last=true}) ->
+    cmd(Pid, SessId, set_candidate_end, #{});
 
-candidate(C, SessId, #candidate{a_line=Line, m_id=Id, m_index=Index}) ->
+candidate(Pid, SessId, #candidate{a_line=Line, m_id=Id, m_index=Index}) ->
     Data = #{sdpMid=>Id, sdpMLineIndex=>Index, candidate=>Line},
-    cmd(C, SessId, set_candidate, Data).
+    cmd(Pid, SessId, set_candidate, Data).
 
 
 
 %% Room
-room_list(C) ->
-    room_cmd(C, list, #{}).
+room_list() ->
+    room_cmd(get_list, #{}).
 
-room_create(C, Data) ->
-    room_cmd(C, create, Data).
+room_create(Data) ->
+    room_cmd(create, Data).
 
-room_destroy(C, Id) ->
-    room_cmd(C, destroy, #{room_id=>Id}).
+room_create(Pid, Data) ->
+    room_cmd(Pid, create, Data).
 
-room_info(C, Id) ->
-    room_cmd(C, info, #{room_id=>Id}).
+room_destroy(Id) ->
+    room_cmd(destroy, #{room_id=>Id}).
 
-room_cmd(C, Cmd, Data) ->
-    nkservice_api_client:cmd(C, media, room, Cmd, Data).
+room_info(Id) ->
+    room_cmd(get_info, #{room_id=>Id}).
+
+room_cmd(Cmd, Data) ->
+    Pid = get_client(),
+    room_cmd(Pid, Cmd, Data).
+
+room_cmd(Pid, Cmd, Data) ->
+    nkservice_api_client:cmd(Pid, media, room, Cmd, Data).
 
 
 %% Events
@@ -210,21 +217,8 @@ invite_listen(Dest, Room) ->
 switch(SessId, Pos) ->
     {ok, listen, #{room_id:=Room}, _} = nkmedia_session:get_type(SessId),
     {ok, PubId, _Backend} = nkcollab_test:get_publisher(Room, Pos),
-    C = get_client(),
-    type(C, SessId, listen, #{publisher_id=>PubId}).
+    type(SessId, listen, #{publisher_id=>PubId}).
 
-
-
-%% Msglog
-msglog_send(C, Room, Msg) ->
-    nkservice_api_client:cmd(C, media, room, msglog_send, #{room_id=>Room, msg=>Msg}).
-
-msglog_get(C, Room) ->
-    nkservice_api_client:cmd(C, media, room, msglog_get, #{room_id=>Room}).
-
-msglog_subscribe(C, Room) ->
-    Spec = #{class=>media, subclass=>room, obj_id=>Room},
-    nkservice_api_client:cmd(C, core, event, subscribe, Spec).
 
 
 %% Gelf
@@ -246,21 +240,15 @@ gelf(C, Src, Short) ->
 
 
 %% @doc Called on login
-api_server_login(#{<<"user_id">>:=User}, _SessId, State) ->
-    nkservice_api_server:start_ping(self(), 60),
-    {true, User, State};
+api_server_login(#{user:=User}, State) ->
+    {true, User, #{}, State};
 
-api_server_login(_Data, _SessId, _State) ->
+api_server_login(_Data, _State) ->
     continue.
 
 
 %% @doc
-api_allow(_Req, State) ->
-    {true, State}.
-
-
-%% @oc
-api_subscribe_allow(_SrvId, _Class, _SubClass, _Type, State) ->
+api_server_allow(_Req, State) ->
     {true, State}.
 
 
@@ -316,7 +304,7 @@ nkcollab_verto_answer(_CallId, _Link, _Answer, Verto) ->
 nkcollab_verto_bye(_CallId, {api_test_session, SessId, WsPid}, Verto) ->
     #{test_api_server:=WsPid} = Verto,
     lager:info("Verto Session BYE for ~s (~p)", [SessId, WsPid]),
-    {ok, _} = cmd(WsPid, SessId, destroy),
+    {ok, _} = cmd(WsPid, SessId, destroy, #{}),
     {ok, Verto};
 
 nkcollab_verto_bye(_CallId, _Link, _Verto) ->
@@ -380,7 +368,7 @@ nkcollab_janus_answer(_CallId, _Link, _Answer, Janus) ->
 %% @private BYE from Janus
 nkcollab_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
     lager:notice("Janus Session BYE for ~s (~p)", [SessId, WsPid]),
-    {ok, _} = cmd(WsPid, SessId, destroy),
+    {ok, _} = cmd(WsPid, SessId, destroy, #{}),
     {ok, Janus};
 
 nkcollab_janus_bye(_CallId, _Link, _Janus) ->
@@ -493,7 +481,7 @@ start_invite(Num, WsPid, Config) ->
         Dest ->
             Config2 = Config#{no_offer_trickle_ice=>true},
             {ok, SessId, SessPid} = start_session(WsPid, Config2),
-            {ok, Offer} = cmd(WsPid, SessId, get_offer),
+            {ok, Offer} = cmd(WsPid, SessId, get_offer, #{}),
             SessLink = {nkmedia_session, SessId, SessPid},
             Syntax = nkmedia_api_syntax:offer(),
             {ok, Offer2, _} = nklib_config:parse_config(Offer, Syntax, #{return=>map}),

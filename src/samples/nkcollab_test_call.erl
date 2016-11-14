@@ -163,17 +163,17 @@ plugin_deps() ->
 
 %% Connect
 connect() ->
-    connect(tets, u1, #{}).
+    connect(test, u1, #{}).
 
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
     {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
     C.
 
 connect2(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user_id => nklib_util:to_binary(User), password=><<"p1">>},
+    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
     {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
     C.
 
@@ -198,19 +198,14 @@ cmd(Pid, Cmd, Data) ->
 
 
 %% @doc Called on login
-api_server_login(Data, SessId, State) ->
-    nkcollab_test_api:api_server_login(Data, SessId, State).
+api_server_login(Data, State) ->
+    nkcollab_test_api:api_server_login(Data, State).
 
 
 %% @doc
-api_allow(Req, State) ->
-    nkcollab_test_api:api_allow(Req, State).
+api_server_allow(Req, State) ->
+    nkcollab_test_api:api_server_allow(Req, State).
  
-
-%% @oc
-api_subscribe_allow(SrvId, Class, SubClass, Type, State) ->
-    nkcollab_test_api:api_subscribe_allow(SrvId, Class, SubClass, Type, State).
-
 
 
 

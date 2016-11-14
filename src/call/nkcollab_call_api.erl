@@ -42,7 +42,7 @@
 %% - if the session is killed, it is detected
 %%   (api_server_reg_down() -> api_call_down() here)
 %% It also subscribes the API session to events
-cmd(<<"create">>, Req, State) ->
+cmd(create, Req, State) ->
     #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
     #{dest:=Dest} = Data,
     Config = Data#{
@@ -58,13 +58,13 @@ cmd(<<"create">>, Req, State) ->
             % In case of no_destination, the call will wait 100msecs before stop
             Body = maps:get(events_body, Data, #{}),
             Event = get_call_event(SrvId, CallId, Body),
-            nkservice_api_server:register_event(self(), Event);
+            nkservice_api_server:subscribe(self(), Event);
         false ->
             ok
     end,
     {ok, #{call_id=>CallId}, State};
 
-cmd(<<"ringing">>, #api_req{data=Data}, State) ->
+cmd(ringing, #api_req{data=Data}, State) ->
     #{call_id:=CallId} = Data,
     Callee = maps:get(callee, Data, #{}),
     case nkcollab_call:ringing(CallId, {nkcollab_api, self()}, Callee) of
@@ -79,7 +79,7 @@ cmd(<<"ringing">>, #api_req{data=Data}, State) ->
             {error, call_error, State}
     end;
 
-cmd(<<"accepted">>, #api_req{srv_id=_SrvId, data=Data}, State) ->
+cmd(accepted, #api_req{srv_id=_SrvId, data=Data}, State) ->
     #{call_id:=CallId} = Data,
     Reply = case Data of
         #{answer:=Answer} -> {answer, Answer};
@@ -99,7 +99,7 @@ cmd(<<"accepted">>, #api_req{srv_id=_SrvId, data=Data}, State) ->
             {error, call_error, State}
     end;
 
-cmd(<<"rejected">>, #api_req{data=Data}, State) ->
+cmd(rejected, #api_req{data=Data}, State) ->
     #{call_id:=CallId} = Data,
     case nkcollab_call:rejected(CallId, {nkcollab_api, self()}) of
         ok ->
@@ -111,7 +111,7 @@ cmd(<<"rejected">>, #api_req{data=Data}, State) ->
             {error, call_error, State}
     end;
 
-cmd(<<"set_candidate">>, #api_req{data=Data}, State) ->
+cmd(set_candidate, #api_req{data=Data}, State) ->
     #{
         call_id := CallId, 
         sdpMid := Id, 
@@ -126,7 +126,7 @@ cmd(<<"set_candidate">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"set_candidate_end">>, #api_req{data=Data}, State) ->
+cmd(set_candidate_end, #api_req{data=Data}, State) ->
     #{call_id := CallId} = Data,
     Candidate = #candidate{last=true},
     case nkcollab_call:candidate(CallId, {nkcollab_api, self()}, Candidate) of
@@ -136,7 +136,7 @@ cmd(<<"set_candidate_end">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"hangup">>, #api_req{data=Data}, State) ->
+cmd(hangup, #api_req{data=Data}, State) ->
     #{call_id:=CallId} = Data,
     Reason = case maps:find(reason, Data) of
         {ok, UserReason} -> {api_hangup, UserReason};
@@ -152,7 +152,7 @@ cmd(<<"hangup">>, #api_req{data=Data}, State) ->
             {error, call_error, State}
     end;
 
-cmd(<<"get_info">>, #api_req{data=Data}, State) ->
+cmd(get_info, #api_req{data=Data}, State) ->
     #{call_id:=CallId} = Data,
     case nkcollab_call:get_call(CallId) of
         {ok, Call} ->
@@ -162,7 +162,7 @@ cmd(<<"get_info">>, #api_req{data=Data}, State) ->
             {error, Error, State}
     end;
 
-cmd(<<"get_list">>, _Req, State) ->
+cmd(get_list, _Req, State) ->
     Res = [#{call_id=>Id} || {Id, _Pid} <- nkcollab_call:get_all()],
     {ok, Res, State};
 
@@ -182,7 +182,7 @@ cmd(Cmd, _Req, State) ->
 api_call_hangup(CallId, ApiPid, _Reason, Call) ->
     #{srv_id:=SrvId} = Call,
     Event = get_call_event(SrvId, CallId, undefined),
-    nkservice_api_server:unregister_event(ApiPid, Event),
+    nkservice_api_server:unsubscribe(ApiPid, Event),
     nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
     {ok, Call}.
 
@@ -194,7 +194,7 @@ api_call_down(CallId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Call ~s is down: ~p", [CallId, Reason]),
     Event = get_call_event(SrvId, CallId, undefined),
-    nkservice_api_server:unregister_event(self(), Event),
+    nkservice_api_server:unsubscribe(self(), Event),
     nkcollab_call_api_events:call_down(SrvId, CallId).
 
 
@@ -207,7 +207,7 @@ api_call_down(CallId, Reason, State) ->
 expand({nkcollab_user, User}, Acc, Call) ->
     Dests = [
         #{dest=>{nkcollab_api_user, Pid}} 
-        || {_SessId, Pid} <- nkservice_api_server:find_user(User)
+        || {_SessId, _Meta, Pid} <- nkservice_api_server:find_user(User)
     ],
     {ok, Acc++Dests, Call};
 
@@ -245,7 +245,7 @@ invite(CallId, {Type, Pid}, Data, #{srv_id:=SrvId}=Call) ->
                 true ->
                     Body = maps:get(events_body, Res, #{}),
                     Event = get_call_event(SrvId, CallId, Body),
-                    nkservice_api_server:register_event(Pid, Event);
+                    nkservice_api_server:subscribe(Pid, Event);
                 false -> 
                     ok
             end,

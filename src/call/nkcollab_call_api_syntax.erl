@@ -31,7 +31,7 @@
 %% Syntax
 %% ===================================================================
 
-syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
+syntax(create, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{
             dest => any,
@@ -44,7 +44,7 @@ syntax(<<"create">>, Syntax, Defaults, Mandatory) ->
         [dest|Mandatory]
     };
 
-syntax(<<"ringing">>, Syntax, Defaults, Mandatory) ->
+syntax(ringing, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary,
@@ -55,7 +55,7 @@ syntax(<<"ringing">>, Syntax, Defaults, Mandatory) ->
     };
 
 
-syntax(<<"accepted">>, Syntax, Defaults, Mandatory) ->
+syntax(accepted, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary,
@@ -69,7 +69,7 @@ syntax(<<"accepted">>, Syntax, Defaults, Mandatory) ->
         [call_id|Mandatory]
     };
 
-syntax(<<"rejected">>, Syntax, Defaults, Mandatory) ->
+syntax(rejected, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary
@@ -78,7 +78,7 @@ syntax(<<"rejected">>, Syntax, Defaults, Mandatory) ->
         [call_id|Mandatory]
     };
 
-syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory) ->
+syntax(set_candidate, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary,
@@ -90,7 +90,7 @@ syntax(<<"set_candidate">>, Syntax, Defaults, Mandatory) ->
         [call_id, sdpMLineIndex, candidate|Mandatory]
     };
 
-syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory) ->
+syntax(set_candidate_end, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary
@@ -99,7 +99,7 @@ syntax(<<"set_candidate_end">>, Syntax, Defaults, Mandatory) ->
         [call_id|Mandatory]
     };
 
-syntax(<<"hangup">>, Syntax, Defaults, Mandatory) ->
+syntax(hangup, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             call_id => binary,
@@ -110,14 +110,14 @@ syntax(<<"hangup">>, Syntax, Defaults, Mandatory) ->
     };
 
 
-syntax(<<"get_info">>, Syntax, Defaults, Mandatory) ->
+syntax(get_info, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{call_id => binary},
         Defaults,
         [call_id|Mandatory]
     };
 
-syntax(<<"get_list">>, Syntax, Defaults, Mandatory) ->
+syntax(get_list, Syntax, Defaults, Mandatory) ->
     {
         Syntax,
         Defaults,
