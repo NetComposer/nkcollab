@@ -22,7 +22,7 @@
 -module(nkcollab_call_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3, event_linked/4]).
+-export([event/3, event_linked/4, call_down/2]).
 
 -include_lib("nksip/include/nksip.hrl").
 
@@ -38,13 +38,17 @@
 -spec event(nkcollab_call:id(), nkcollab_call:event(), nkcollab_call:call()) ->
     {ok, nkcollab_call:call()}.
 
+event(CallId, created, Call) ->
+    send_event(CallId, created, #{}, Call);
+
 event(CallId, {ringing, Callee}, Call) ->
     send_event(CallId, ringing, #{callee=>Callee}, Call);
 
 event(CallId, {accepted, Callee}, Call) ->
     send_event(CallId, accepted, #{callee=>Callee}, Call);
 
-event(CallId, {hangup, Reason}, #{srv_id:=SrvId}=Call) ->
+% The event 'destroyed' is used only internally
+event(CallId, {stopped, Reason}, #{srv_id:=SrvId}=Call) ->
     {Code, Txt} = nkservice_util:error_code(SrvId, Reason),
     send_event(CallId, hangup, #{code=>Code, reason=>Txt}, Call);
 
@@ -55,6 +59,7 @@ event(_CallId, _Event, Call) ->
 %% @private
 %% Send the event only if the Link matched the one on the event itself, and,
 %% in that case, only to that pid()
+%% Called from nkcollab_call_callbacks
 -spec event_linked(nkcollab_call:id(), nklib:link(), 
                  nkcollab_call:event(), nkcollab_call:call()) ->
     {ok, nkcollab_call:call()}.
@@ -86,6 +91,13 @@ event_linked(CallId, Link, {session_status, SessId, Status, Meta, Link}, Call) -
 
 event_linked(_CallId, _Link, _Event, Call) ->
     {ok, Call}.
+
+
+%% @private
+call_down(SrvId, CallId) ->
+    {Code, Txt} = nkservice_util:error_code(SrvId, process_down),
+    Body = #{code=>Code, reason=>Txt},
+    nkcollab_api_events:send_event(SrvId, call, CallId, hangup, Body).
 
 
 

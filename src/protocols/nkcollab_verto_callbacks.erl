@@ -282,7 +282,7 @@ nkmedia_session_reg_event(_SessId, {nkcollab_verto, CallId, Pid}, Event, _Sessio
                 {error, Error} ->
                     lager:error("Error setting Verto answer: ~p", [Error])
             end;
-        {destroyed, Reason} ->
+        {stopped, Reason} ->
             lager:info("Verto stopping after session stop: ~p", [Reason]),
             nkcollab_verto:hangup(Pid, CallId, Reason);
         _ ->
@@ -342,7 +342,7 @@ nkcollab_call_reg_event(CallId, {nkcollab_verto, CallId, Pid}=Link, Event, _Call
         {session_status, _SessId, _Status, _Data, Link} ->
             % lager:notice("Verto status: ~p ~p", [_Status, _Data]),
             ok;
-        {hangup, Reason} ->
+        {stopped, Reason} ->
             nkcollab_verto:hangup(Pid, CallId, Reason);
         _ ->
             % lager:notice("Verto unknown call event: ~p", [Event])

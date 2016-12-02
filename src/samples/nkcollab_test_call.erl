@@ -190,6 +190,10 @@ cmd(Pid, Cmd, Data) ->
     nkservice_api_client:cmd(Pid, collab, call, Cmd, Data).
 
 
+subscribe(WsPid, CallId, Type, Body) ->
+    Data = #{class=>collab, subclass=>call, obj_id=>CallId, type=>Type, body=>Body},
+    nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
+
 
 
 %% ===================================================================
@@ -413,12 +417,12 @@ start_call(Dest, Offer, CallId, Ws, Events, _Link) ->
         dest => Dest,
         caller => #{info=>nkcollab_call_test},
         offer => Offer,
-        events_body => Events,
         no_answer_trickle_ice => true,      % For our answer
         no_offer_trickle_ice => true        % For B-side offer
     },
     case cmd(Ws, create, Config) of
         {ok, #{<<"call_id">>:=CallId}} -> 
+            subscribe(Ws, CallId, '*', Events),
             ok;
         {error, Error} ->
             {error, Error}

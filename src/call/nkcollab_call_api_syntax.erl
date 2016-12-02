@@ -37,8 +37,7 @@ syntax(create, Syntax, Defaults, Mandatory) ->
             dest => any,
             call_id => binary,
             caller => any,
-            backend => atom,
-            events_body => any
+            backend => atom
         }),
         Defaults,
         [dest|Mandatory]

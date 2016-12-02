@@ -41,7 +41,6 @@
 %%   (nkcollab_call_reg_event() -> call_hangup () here)
 %% - if the session is killed, it is detected
 %%   (api_server_reg_down() -> api_call_down() here)
-%% It also subscribes the API session to events
 cmd(create, Req, State) ->
     #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
     #{dest:=Dest} = Data,
@@ -53,15 +52,6 @@ cmd(create, Req, State) ->
     Type = maps:get(type, Data, nkcollab_any),
     {ok, CallId, Pid} = nkcollab_call:start_type(SrvId, Type, Dest, Config),
     nkservice_api_server:register(self(), {nkcollab_call, CallId, Pid}), 
-    case maps:get(subscribe, Data, true) of
-        true ->
-            % In case of no_destination, the call will wait 100msecs before stop
-            Body = maps:get(events_body, Data, #{}),
-            Event = get_call_event(SrvId, CallId, Body),
-            nkservice_api_server:subscribe(self(), Event);
-        false ->
-            ok
-    end,
     {ok, #{call_id=>CallId}, State};
 
 cmd(ringing, #api_req{data=Data}, State) ->

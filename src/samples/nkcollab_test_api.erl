@@ -133,6 +133,15 @@ get_client() ->
 media(S, Data) ->
     cmd(S, update_media, Data).
 
+%% Session
+status(S) ->
+    cmd(S, get_status, #{}).
+
+%% Session
+stats(S) ->
+    cmd(S, get_stats, #{}).
+
+
 recorder(S, Data) ->
     cmd(S, recorder_action, Data).
 
@@ -168,16 +177,25 @@ room_list() ->
     room_cmd(get_list, #{}).
 
 room_create(Data) ->
-    room_cmd(create, Data).
+    case room_cmd(create, Data) of
+        {ok, _} -> timer:sleep(500), ok;
+        {error, {304002, _}} -> ok
+    end.
 
 room_create(Pid, Data) ->
-    room_cmd(Pid, create, Data).
+    case room_cmd(Pid, create, Data) of
+        {ok, _} -> ok;
+        {error, {304002, _}} -> ok
+    end.
 
 room_destroy(Id) ->
     room_cmd(destroy, #{room_id=>Id}).
 
 room_info(Id) ->
     room_cmd(get_info, #{room_id=>Id}).
+
+room_status(Id) ->
+    room_cmd(get_status, #{room_id=>Id}).
 
 room_cmd(Cmd, Data) ->
     Pid = get_client(),
@@ -189,8 +207,8 @@ room_cmd(Pid, Cmd, Data) ->
 
 %% Events
 
-subscribe(WsPid, SessId, Body) ->
-    Data = #{class=>media, subclass=>session, obj_id=>SessId, body=>Body},
+subscribe(WsPid, SessId, Type, Body) ->
+    Data = #{class=>media, subclass=>session, obj_id=>SessId, type=>Type, body=>Body},
     nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
 
 
@@ -393,59 +411,54 @@ nkcollab_janus_terminate(_Reason, Janus) ->
 
 %% @private
 incoming(<<"je">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_janus, echo, Offer, Events, Opts),
-    start_session(WsPid, Config#{bitrate=>100000, mute_audio=>false});
+    Config = incoming_config(nkmedia_janus, echo, Offer, Opts),
+    start_session(WsPid, Config#{bitrate=>500000, mute_audio=>false}, Events);
 
 incoming(<<"fe">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_fs, echo, Offer, Events, Opts),
-    start_session(WsPid, Config);
+    Config = incoming_config(nkmedia_fs, echo, Offer, Opts),
+    start_session(WsPid, Config, Events);
 
 incoming(<<"ke">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_kms, echo, Offer, Events, Opts),
-    start_session(WsPid, Config#{mute_audio=>true});
+    Config = incoming_config(nkmedia_kms, echo, Offer, Opts),
+    start_session(WsPid, Config#{mute_audio=>true}, Events);
 
 incoming(<<"m1">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_fs, mcu, Offer, Events, Opts#{room_id=>m1}),
-    start_session(WsPid, Config);
+    Config = incoming_config(nkmedia_fs, mcu, Offer, Opts#{room_id=>m1}),
+    start_session(WsPid, Config, Events);
 
 incoming(<<"m2">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_fs, mcu, Offer, Events, Opts#{room_id=>m2}),
-    start_session(WsPid, Config);
+    Config = incoming_config(nkmedia_fs, mcu, Offer, Opts#{room_id=>m2}),
+    start_session(WsPid, Config, Events);
 
 incoming(<<"jp1">>, Offer, WsPid, Events, Opts) ->
-    RoomConfig = #{class=>sfu, room_id=>sfu, backend=>nkmedia_janus, bitrate=>100000},
-    case room_create(WsPid, RoomConfig) of
-        {ok, _} -> ok;
-        {error, {304002, _}} -> ok
-    end,
-    Config = incoming_config(nkmedia_janus, publish, Offer, Events, Opts),
-    start_session(WsPid, Config#{room_id=>sfu});
+    RoomConfig = #{class=>sfu, room_id=>sfu, backend=>nkmedia_janus, bitrate=>500000},
+    ok = room_create(WsPid, RoomConfig),
+    Config = incoming_config(nkmedia_janus, publish, Offer, Opts),
+    start_session(WsPid, Config#{room_id=>sfu}, Events);
 
 incoming(<<"jp2">>, Offer, WsPid, Events, Opts) ->
-    Config1 = incoming_config(nkmedia_janus, publish, Offer, Events, Opts),
-    Config2 = Config1#{
-        room_audio_codec => pcma,
-        room_video_codec => vp9,
-        room_bitrate => 100000
+    RoomConfig = #{
+        class => sfu,
+        backend => nkmedia_janus,
+        room_id => sfu2,
+        audio_codec => pcma,
+        video_codec => vp9,
+        bitrate => 500000,
+        timeout => 10
     },
-    start_session(WsPid, Config2#{room_id=>sfu2});
+    ok = room_create(WsPid, RoomConfig),
+    Config = incoming_config(nkmedia_janus, publish, Offer, Opts),
+    start_session(WsPid, Config#{room_id=>sfu2}, Events);
 
-incoming(<<"kp1">>, Offer, WsPid, Events, Opts) ->
+incoming(<<"kp">>, Offer, WsPid, Events, Opts) ->
     RoomConfig = #{class=>sfu, room_id=>sfu, backend=>nkmedia_kms},
-    case room_create(WsPid, RoomConfig) of
-        {ok, _} -> ok;
-        {error, {304002, _}} -> ok
-    end,
-    Config = incoming_config(nkmedia_kms, publish, Offer, Events, Opts),
-    start_session(WsPid, Config#{room_id=>sfu});
-
-incoming(<<"kp2">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_kms, publish, Offer, Events, Opts),
-    start_session(WsPid, Config#{room_id=>sfu2});
+    ok = room_create(WsPid, RoomConfig),
+    Config = incoming_config(nkmedia_kms, publish, Offer, Opts),
+    start_session(WsPid, Config#{room_id=>sfu}, Events);
 
 incoming(<<"play">>, Offer, WsPid, Events, Opts) ->
-    Config = incoming_config(nkmedia_kms, play, Offer, Events, Opts),
-    start_session(WsPid, Config);
+    Config = incoming_config(nkmedia_kms, play, Offer, Opts),
+    start_session(WsPid, Config, Events);
 
 incoming(_, _Offer, _WsPid, _Events, _Opts) ->
     {error, no_destination}.
@@ -453,21 +466,20 @@ incoming(_, _Offer, _WsPid, _Events, _Opts) ->
 
 
 %% @private
-incoming_config(Backend, Type, Offer, Events, Opts) ->
+incoming_config(Backend, Type, Offer, Opts) ->
     Opts#{
         backend => Backend, 
         type => Type, 
-        offer => Offer, 
-        events_body => Events
+        offer => Offer
     }.
 
 
-start_session(WsPid, Config) when is_pid(WsPid) ->
+start_session(WsPid, Config, Events) when is_pid(WsPid) ->
     case nkservice_api_client:cmd(WsPid, media, session, create, Config) of
         {ok, #{<<"session_id">>:=SessId}} -> 
+            subscribe(WsPid, SessId, '*', Events),
             {ok, SessPid} = nkmedia_session:find(SessId),
             {ok, SessId, SessPid};
-            % {ok, {api_test_session, SessId, WsPid}};
         {error, {_Code, Txt}} -> 
             {error, Txt}
     end.
@@ -480,7 +492,7 @@ start_invite(Num, WsPid, Config) ->
             {error, unknown_user};
         Dest ->
             Config2 = Config#{no_offer_trickle_ice=>true},
-            {ok, SessId, SessPid} = start_session(WsPid, Config2),
+            {ok, SessId, SessPid} = start_session(WsPid, Config2, #{}),
             {ok, Offer} = cmd(WsPid, SessId, get_offer, #{}),
             SessLink = {nkmedia_session, SessId, SessPid},
             Syntax = nkmedia_api_syntax:offer(),

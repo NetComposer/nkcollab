@@ -473,7 +473,9 @@ process_client_req(trickle, Msg, NkPort, #state{session_id=SessionId}=State) ->
             {ok, State2} = 
                 handle(nkcollab_janus_candidate, [CallId, Link, Candidate], State);
         not_found ->
-            State2 = error(not_found_on_accept_trickle)
+            ?LLOG(warning, "call not found on accept trickle", [], State),
+            hangup(self(), CallId, call_not_found),
+            State2 = State
     end,
     Resp = make_resp(#{janus=>ack, session_id=>SessionId}, Msg),
     send(Resp, NkPort, State2);
@@ -503,7 +505,7 @@ process_client_msg(call, Body, Msg, NkPort, #state{srv_id=SrvId}=State) ->
     #{<<"jsep">>:=JSep} = Msg,
     #{<<"type">>:=<<"offer">>, <<"sdp">>:=SDP} = JSep,
     Trickle = maps:get(<<"trickle">>, JSep, true),
-    ?LLOG(notice, "janus offer, trickle: ~p", [Trickle], State),
+    ?LLOG(info, "janus offer, trickle: ~p", [Trickle], State),
     Offer = #{dest=>Dest, sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     % io:format("SDP: ~s\n", [SDP]),
     % lager:notice("JSEP: ~p", [Msg#{<<"jsep">>=>maps:remove(<<"sdp">>, JSep)}]),
@@ -526,7 +528,7 @@ process_client_msg(accept, _Body, Msg, NkPort, State) ->
     #{<<"jsep">>:=JSep} = Msg,
     #{<<"type">>:=<<"answer">>, <<"sdp">>:=SDP} = JSep,
     Trickle = maps:get(<<"trickle">>, JSep, true),
-    ?LLOG(notice, "answer, trickle: ~p", [Trickle], State),
+    ?LLOG(info, "answer, trickle: ~p", [Trickle], State),
     Answer = #{sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     case links_get(CallId, State) of
         {ok, Link} ->

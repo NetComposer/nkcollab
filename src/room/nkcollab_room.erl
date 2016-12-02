@@ -380,7 +380,7 @@ media_room_event(RoomId, {status, Class, Data}) ->
     lager:error("ROOM INFO: ~p, ~p", [Class, Data]),
     send_room_info(RoomId, Data#{class=>Class});
 
-media_room_event(RoomId, {destroyed, Reason}) ->
+media_room_event(RoomId, {stopped, Reason}) ->
     stop(RoomId, Reason);
 
 media_room_event(_RoomId, _Event) ->
@@ -1129,7 +1129,7 @@ links_fold(Fun, Acc, #state{links=Links}) ->
 
 %% @private
 restart_timer(#state{id=RoomId}) ->
-    nkmedia_room:restart_timer(RoomId).
+    nkmedia_room:restart_timeout(RoomId).
 
 
 

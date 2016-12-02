@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Call management
+%% @doc Call management plugin
 -module(nkcollab_call).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
@@ -103,14 +103,15 @@
 
 
 -type event() :: 
+    created                                                                 |
     {ringing, callee()}                                                     | 
     {accepted, callee()}                                                    | 
-    {hangup, nkservice:error()}                                             |
+    {stopped, nkservice:error()}                                               |
     {session_candidate, session_id(), nkmedia:candidate(), nklib:link()}    |
-    {session_candidate_end, session_id(), nklib:link()}                     |
     {session_answer, session_id(), nkmedia:answer(), nklib:link()}          |
     {session_status, session_id(), atom(), map(), nklib:link()}             |
-    {session_cancelled, session_id(), nklib:link()}.
+    {session_cancelled, session_id(), nklib:link()}                         |
+    destroyed.
 
 
 
@@ -327,8 +328,9 @@ init([#{srv_id:=SrvId, call_id:=CallId, dest:=Dest}=Call]) ->
         _ ->
             State2
     end,
+    State4 = event(created, State3),
     gen_server:cast(self(), start_caller_session),
-    handle(nkcollab_call_init, [CallId], State3).
+    handle(nkcollab_call_init, [CallId], State4).
 
 
 %% @private
@@ -411,7 +413,7 @@ handle_cast(start_caller_session, #state{id=CallId, backend=Backend, call=Call}=
         {none, State2} ->
             do_start(State2);
         {error, Error, State2} ->
-            do_hangup(Error, State2)
+            do_stop(Error, State2)
     end;
 
 handle_cast({candidate, Id, Candidate}, State) ->
@@ -444,7 +446,7 @@ handle_cast({session_event, SessId, Event}, State) ->
 
 handle_cast({hangup, Reason}, State) ->
     ?LLOG(info, "external hangup: ~p", [Reason], State),
-    do_hangup(Reason, State);
+    do_stop(Reason, State);
 
 handle_cast(Msg, State) -> 
     handle(nkcollab_call_handle_cast, [Msg], State).
@@ -486,13 +488,13 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
             end,
             case Data of
                 caller_link ->
-                    do_hangup(caller_stopped, State2);
+                    do_stop(caller_stopped, State2);
                 caller_session_id ->
-                    do_hangup(caller_stopped, State2);
+                    do_stop(caller_stopped, State2);
                 callee_link ->
                     case State of
                         #state{callee_link=Link} ->
-                            do_hangup(callee_stopped, State2);
+                            do_stop(callee_stopped, State2);
                         _ ->
                             rejected(self(), Link),
                             {noreply, State2}
@@ -500,17 +502,20 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
                 callee_session_id ->
                     case State of
                         #state{callee_session_id=Link} ->
-                            do_hangup(callee_stopped, State2);
+                            do_stop(callee_stopped, State2);
                         _ ->
                             rejected(self(), Link),
                             {noreply, State2}
                     end;
                 reg ->
-                    do_hangup(registered_down, State2)
+                    do_stop(registered_down, State2)
             end;
         not_found ->
             handle(nkcollab_call_handle_info, [Msg], State)
     end;
+
+handle_info(destroy, State) ->
+    {stop, normal, State};
 
 handle_info(Msg, #state{}=State) -> 
     handle(nkcollab_call_handle_info, [Msg], State).
@@ -527,25 +532,17 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, State) ->
-    #state{caller_session_id=Caller, callee_session_id=Callee, stop_reason=Stop} = State,
-    Stop2 = case Stop of
+terminate(Reason, #state{stop_reason=Stop}=State) ->
+    case Stop of
         false ->
             Ref = nklib_util:uid(),
             ?LLOG(notice, "terminate error ~s: ~p", [Ref, Reason], State),
-            {internal_error, Ref};
+            {noreply, State2} = do_stop({internal_error, Ref}, State);
         _ ->
-            Stop
+            State2 = State
     end,
-    stop_session(Caller, Stop2),
-    stop_session(Callee, Stop2),
-    State2 = cancel_all(State),
-    timer:sleep(100),
-    % Give time for registrations to success
-    State3 = event({hangup, Stop2}, State2),
+    State3 = event(destroyed, State2),
     {ok, _State4} = handle(nkcollab_call_terminate, [Reason], State3),
-    % Wait to receive events before receiving DOWN
-    timer:sleep(100),
     ok.
 
 
@@ -719,12 +716,12 @@ do_session_event(SessId, {answer, Answer}, State) ->
     end,
     {noreply, State2};
 
-do_session_event(SessId, {destroyed, _Reason}, State) ->
+do_session_event(SessId, {stopped, _Reason}, State) ->
     case find_sess_id(SessId, State) of
         {caller, _} ->
-            do_hangup(caller_stopped, State);
+            do_stop(caller_stopped, State);
         {callee, _} ->
-            do_hangup(callee_stopped, State);
+            do_stop(callee_stopped, State);
         {invite, _} ->
             rejected(self(), SessId),
             {noreply, State};
@@ -778,7 +775,7 @@ remove_invite(Pos, Reason, #state{invites=Invs}=State) ->
             case Invs2 of
                 [] ->
                     ?LLOG(info, "all invites removed", [], State),
-                    do_hangup(no_answer, State#state{invites=[]});
+                    do_stop(no_answer, State#state{invites=[]});
                 _ ->
                     ?LLOG(info, "removed invite (~p)", [Pos], State),
                     {noreply, State#state{invites=Invs2}}
@@ -829,8 +826,24 @@ find_sess_id(SessId, State) ->
 
 
 %% @private
-do_hangup(Reason, State) ->
-    {stop, normal, State#state{stop_reason=Reason}}.
+do_stop(Reason, #state{stop_reason=false}=State) ->
+    ?LLOG(notice, "stopped: ~p", [Reason], State),
+    #state{
+        caller_session_id = Caller, 
+        callee_session_id = Callee
+    } = State,
+    stop_session(Caller, Reason),
+    stop_session(Callee, Reason),
+    State2 = cancel_all(State),
+    % Give time for possible registrations to success and capture stop event
+    timer:sleep(100),
+    State3 = event({stopped, Reason}, State2),
+    erlang:send_after(5000, self(), destroy),
+    {noreply, State3#state{stop_reason=Reason}};
+
+do_stop(_Reason, State) ->
+    % destroy already sent
+    {noreply, State}.
 
 
 %% @private

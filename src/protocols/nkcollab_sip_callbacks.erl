@@ -372,7 +372,7 @@ nkcollab_call_reg_event(CallId, {nkcollab_sip, _Pid}=Link, Event, _Call) ->
             continue;
         {session_status, _SessId, Status, Data, Link} ->
             lager:notice("SIP status: ~p ~p", [Status, Data]);
-        {hangup, _Reason} ->
+        {stopped, _Reason} ->
             Self = self(),
             spawn(fun() -> nkcollab_sip:hangup({nkcollab_call, CallId, Self}) end);
         _ ->
@@ -410,7 +410,7 @@ nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {answer, Answer}, _Session)
     end,
     continue;
 
-nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {destroyed, _Reason}, _Session) ->
+nkmedia_session_reg_event(SessId, {nkcollab_sip, _}, {stopped, _Reason}, _Session) ->
     Self = self(),
     % We should not block the session
     spawn(fun() -> nkcollab_sip:hangup({nkmedia_session, SessId, Self}) end),

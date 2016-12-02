@@ -26,6 +26,7 @@
 -export([nkcollab_call_init/2, nkcollab_call_terminate/2, 
          nkcollab_call_expand/3, nkcollab_call_invite/4, 
          nkcollab_call_event/3, nkcollab_call_reg_event/4, 
+         nkcollab_call_stop/2,
          nkcollab_call_handle_call/3, nkcollab_call_handle_cast/2, 
          nkcollab_call_handle_info/2,
          nkcollab_call_start_caller_session/4, 
@@ -109,6 +110,14 @@ nkcollab_call_init(_Id, Call) ->
     {ok, Call}.
 
 %% @doc Called when the call stops
+-spec nkcollab_call_stop(Reason::term(), call()) ->
+    {ok, call()}.
+
+nkcollab_call_stop(_Reason, Call) ->
+    {ok, Call}.
+
+
+%% @doc Called when the call is destroyed
 -spec nkcollab_call_terminate(Reason::term(), call()) ->
     {ok, call()}.
 
@@ -166,7 +175,7 @@ nkcollab_call_event(CallId, Event, Call) ->
 -spec nkcollab_call_reg_event(call_id(), nklib:link(), nkcollab_call:event(), call()) ->
     {ok, call()} | continue().
 
-nkcollab_call_reg_event(CallId, {nkcollab_api, ApiPid}, {hangup, Reason}, Call) ->
+nkcollab_call_reg_event(CallId, {nkcollab_api, ApiPid}, {stopped, Reason}, Call) ->
     nkcollab_call_api:api_call_hangup(CallId, ApiPid, Reason, Call);
 
 nkcollab_call_reg_event(CallId, {nkcollab_api, _}=Link, Event, Call) ->
@@ -266,7 +275,7 @@ api_server_syntax(_Req, _Syntax, _Defaults, _Mandatory) ->
 
 %% @private
 api_server_reg_down({nkcollab_call, CallId, _Pid}, Reason, State) ->
-    nkcollab_api:api_call_down(CallId, Reason, State),
+    nkcollab_call_api:api_call_down(CallId, Reason, State),
     continue;
 
 api_server_reg_down(_Link, _Reason, _State) ->
