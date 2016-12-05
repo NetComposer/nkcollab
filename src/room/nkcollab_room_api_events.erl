@@ -40,26 +40,6 @@ event(RoomId, created, Room) ->
     Data = nkcollab_room_api_syntax:get_room_info(Room),
     send_event(RoomId, created, Data, Room);
 
-event(RoomId, {destroyed, Reason}, #{srv_id:=SrvId}=Room) ->
-    {Code, Txt} = nkservice_util:error_code(SrvId, Reason),
-    send_event(RoomId, destroyed, #{code=>Code, reason=>Txt}, Room);
-
-event(RoomId, {started_member, MemberId, Info}, Room) ->
-    Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-    send_event(RoomId, started_member, Info2#{member_id=>MemberId}, Room);
-
-event(RoomId, {stopped_member, MemberId, Info}, Room) ->
-    Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-    send_event(RoomId, stopped_member, Info2#{member_id=>MemberId}, Room);
-
-% event(RoomId, {started_session, SessId, MemberId}, Room) ->
-%     Data = #{member_id=>MemberId, session_id=>SessId},
-%     send_event(RoomId, started_session, Data, Room);
-
-event(RoomId, {stopped_session, SessId, MemberId}, Room) ->
-    Data = #{member_id=>MemberId, session_id=>SessId},
-    send_event(RoomId, stopped_session, Data, Room);
-
 event(RoomId, {broadcast, Msg}, Room) ->
     send_event(RoomId, broadcast, Msg, Room);
 
@@ -73,12 +53,37 @@ event(RoomId, {session_info, MemberId, SessId, Meta}, Room) ->
     Meta2 = Meta#{member_id=>MemberId, session_id=>SessId},
     send_event(RoomId, session_info, Meta2, Room);
 
-event(RoomId, {updated_member, MemberId, Info}, Room) ->
-    Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-    send_event(RoomId, updated_member, Info2#{member_id=>MemberId}, Room);
+event(RoomId, {status, Status}, Room) ->
+    send_event(RoomId, status, Status, Room);
 
-event(RoomId, {updated_media, MemberId, Media}, Room) ->
-    send_event(RoomId, updated_media, #{member_id=>MemberId, media=>Media}, Room);
+% event(RoomId, {started_member, MemberId, Info}, Room) ->
+%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
+%     send_event(RoomId, started_member, Info2#{member_id=>MemberId}, Room);
+
+% event(RoomId, {stopped_member, MemberId, Info}, Room) ->
+%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
+%     send_event(RoomId, stopped_member, Info2#{member_id=>MemberId}, Room);
+
+% event(RoomId, {started_session, SessId, MemberId}, Room) ->
+%     Data = #{member_id=>MemberId, session_id=>SessId},
+%     send_event(RoomId, started_session, Data, Room);
+
+% event(RoomId, {stopped_session, SessId, MemberId}, Room) ->
+%     Data = #{member_id=>MemberId, session_id=>SessId},
+%     send_event(RoomId, stopped_session, Data, Room);
+
+% event(RoomId, {updated_member, MemberId, Info}, Room) ->
+%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
+%     send_event(RoomId, updated_member, Info2#{member_id=>MemberId}, Room);
+
+% event(RoomId, {updated_media, MemberId, Media}, Room) ->
+%     send_event(RoomId, updated_media, #{member_id=>MemberId, media=>Media}, Room);
+
+%% 'destroyed' event is only for internal use
+event(RoomId, {stopped, Reason}, #{srv_id:=SrvId}=Room) ->
+    {Code, Txt} = nkservice_util:error_code(SrvId, Reason),
+    send_event(RoomId, destroyed, #{code=>Code, reason=>Txt}, Room);
+
 
 event(_RoomId, _Event, Room) ->
     {ok, Room}.

@@ -25,10 +25,9 @@
 
 -export([start/2, stop/1, stop/2]).
 -export([get_room/1, get_publish_sessions/1, get_all_sessions/1]).
--export([add_member/3, remove_member/2]).
--export([add_publish_session/3, add_listen_session/4, remove_session/2]).
--export([update_publish_session/4, update_user_meta/3, update_session_meta/4,
-         update_session_media/3]).
+-export([add_publish_session/4, add_listen_session/5, remove_session/2]).
+-export([remove_member/2, remove_member_conn/3, get_member_sessions/2]).
+-export([update_publish_session/3, update_meta/3, update_session/3]).
 -export([send_room_info/2, send_session_info/3, send_member_info/3]).
 -export([broadcast/3, get_all_msgs/1]).
 -export([register/2, unregister/2, get_all/0]).
@@ -58,6 +57,8 @@
 
 -type member_id() :: binary().
 
+-type conn_id() :: binary().
+
 -type meta() :: map().
 
 
@@ -85,8 +86,7 @@
 
 -type member_info() :: 
     #{
-        meta => meta(),
-        sessions => [session_id()]
+        sessions => #{conn_id() => [session_id()]}
     }.
 
 
@@ -98,8 +98,8 @@
         trickle_ice_timeout => integer(),
         sdp_type => webrtc | rtp,
         register => nklib:link(),
-        user_id => nkservice:user_id(),             % Informative only
-        user_session => nkservice:user_session(),   % Informative only
+        member => nkservice:user_id(),                
+        member_conn_id => nkservice:user_session(),   
 
         mute_audio => boolean(),
         mute_video => boolean(),
@@ -108,7 +108,7 @@
 
         type => binary(),
         device => binary(),
-        session_meta => map()
+        meta => map()
     }.
 
 
@@ -120,10 +120,10 @@
         bitrate => integer(),
         started_time => nklib_util:l_timestamp(),
         stopped_time => nklib_util:l_timestamp(),
-        session_meta => map(),
-        user_id => member_id(),
-        user_session => term(),
-        user_meta => map(),
+        meta => map(),
+        announce => map(),
+        member_id => member_id(),
+        member_conn_id => conn_id(),
         publisher_id => session_id()
     }.
 
@@ -139,11 +139,9 @@
 
 -type event() :: 
     created                                         |
-    {started_publish_session, session_data()}       |
-    {stopped_publish_session, session_data()}       |
-    {started_listen_session, session_data()}        |
-    {stopped_listen_session, session_data()}        |
-    {info, map()}                                   |
+    {started_session, session_data()}               |
+    {stopped_session, session_data()}               |
+    {room_info, map()}                              |
     {member_info, member_id(), map()}               |
     {session_info, member_id(), session_id, map()}  |
     {broadcast, msg()}                              |
@@ -182,7 +180,7 @@ start(Srv, Config) ->
                 {ok, RoomId, RoomPid} ->
                     {ok, BaseRoom} = nkmedia_room:get_room(RoomPid),
                     BaseRoom2 = maps:with([srv_id, backend], BaseRoom),
-                    Config3 = maps:merge(Config, BaseRoom2),
+                    Config3 = maps:merge(Config2, BaseRoom2),
                     {ok, Pid} = gen_server:start(?MODULE, [Config3, RoomPid], []),
                     {ok, RoomId, Pid};
                 {error, Error} ->
@@ -231,12 +229,36 @@ get_all_sessions(Id) ->
     do_call(Id, get_all_sessions).
 
 
-%% @doc Creates a new member, as presenter or viewer
--spec add_member(id(), member_id(), meta()) ->
-    {ok, #{meta=>meta(), sessions=>[session_data()]}} | {error, term()}.
+%% @doc 
+-spec add_publish_session(id(), member_id(), conn_id(), session_config()) ->
+    {ok, session_id(), pid()} | {error, term()}.
 
-add_member(Id, MemberId, Meta) ->
-    do_call(Id, {add_member, MemberId, Meta}).
+add_publish_session(Id, MemberId, ConnId, SessConfig) ->
+    do_call(Id, {add_session, publish, MemberId, ConnId, SessConfig}).
+
+
+%% @doc 
+-spec add_listen_session(id(), member_id(), conn_id(), session_id(), session_config()) ->
+    {ok, session_id(), pid()} | {error, term()}.
+
+add_listen_session(Id, MemberId, ConnId, SessId, SessConfig) ->
+    do_call(Id, {add_session, {listen, SessId}, MemberId, ConnId, SessConfig}).
+
+
+%% Changes presenter's sessions and updates all viewers
+-spec update_publish_session(id(), session_id(), session_config()) ->
+    {ok, session_id()} | {error, term()}.
+
+update_publish_session(Id, SessId, SessConfig) ->
+    do_call(Id, {update_publish_session, SessId, SessConfig}).
+
+
+%% Removes a session
+-spec remove_session(id(), session_id()) ->
+    ok | {error, term()}.
+
+remove_session(Id, SessId) ->
+    do_call(Id, {remove_session, SessId}).
 
 
 %% @doc 
@@ -248,60 +270,35 @@ remove_member(Id, MemberId) ->
 
 
 %% @doc 
--spec add_publish_session(id(), member_id(), session_config()) ->
-    {ok, session_id()} | {error, term()}.
-
-add_publish_session(Id, MemberId, SessConfig) ->
-    do_call(Id, {add_session, publish, MemberId, SessConfig}).
-
-
-%% @doc 
--spec add_listen_session(id(), member_id(), session_id(), session_config()) ->
-    {ok, session_id()} | {error, term()}.
-
-add_listen_session(Id, MemberId, SessId, SessConfig) ->
-    do_call(Id, {add_session, {listen, SessId}, MemberId, SessConfig}).
-
-
-%% Changes presenter's sessions and updates all viewers
--spec update_publish_session(id(), member_id(), session_id(), session_config()) ->
-    {ok, session_id()} | {error, term()}.
-
-update_publish_session(Id, MemberId, SessId, SessConfig) ->
-    do_call(Id, {update_publish_session, MemberId, SessId, SessConfig}).
-
-
-%% Removes a session
--spec remove_session(id(), session_id()) ->
+-spec remove_member_conn(id(), member_id(), conn_id()) ->
     ok | {error, term()}.
 
-remove_session(Id, SessId) ->
-    do_call(Id, {remove_session, SessId, SessId}).
+remove_member_conn(Id, MemberId, ConnId) ->
+    do_call(Id, {remove_member_conn, MemberId, ConnId}).
 
 
 %% @private
--spec update_user_meta(id(), member_id(), meta()) ->
+-spec update_meta(id(), session_id(), meta()) ->
     ok | {error, term()}.
 
-update_user_meta(Id, MemberId, Media) ->
-    do_call(Id, {update_meta, MemberId, Media}).
+update_meta(Id, SessId, Meta) ->
+    do_call(Id, {update_meta, SessId, Meta}).
 
 
 %% @private
--spec update_session_meta(id(), member_id(), session_id(), meta()) ->
+-spec update_session(id(), session_id(), media_opts()) ->
     ok | {error, term()}.
 
-update_session_meta(Id, MemberId, SessId, Media) ->
-    do_call(Id, {update_session_meta, MemberId, SessId, Media}).
-
+update_session(Id, SessId, Media) ->
+    do_call(Id, {update_session, SessId, Media}).
 
 
 %% @private
--spec update_session_media(id(), member_id(), media_opts()) ->
+-spec get_member_sessions(id(), member_id()) ->
     ok | {error, term()}.
 
-update_session_media(Id, MemberId, Media) ->
-    do_call(Id, {update_session_media, MemberId, Media}).
+get_member_sessions(Id, MemberId) ->
+    do_call(Id, {get_member_sessions, MemberId}).
 
 
 %% @private
@@ -368,14 +365,11 @@ unregister(RoomId, Link) ->
 
 %% @doc Gets all started rooms
 -spec get_all() ->
-    [{id(), meta(), pid()}].
+    [{id(), pid()}].
 
 get_all() ->
-    [
-        {Id, Meta, Pid} ||
-        {{Id, Meta}, Pid} <- nklib_proc:values(?MODULE)
-    ].
-
+    nklib_proc:values(?MODULE).
+    
 
 %% @private Called from nkcollab_room_callbacks for session events
 -spec media_session_event(id(), session_id(), nkmedia_session:event()) ->
@@ -453,59 +447,42 @@ init([#{room_id:=RoomId, srv_id:=SrvId, backend:=Backend}=Room, BasePid]) ->
     {noreply, #state{}} | {reply, term(), #state{}} |
     {stop, Reason::term(), #state{}} | {stop, Reason::term(), Reply::term(), #state{}}.
 
-
-handle_call({add_member, MemberId, Meta}, _From, State) ->
-    MemberInfo = case do_find_member(MemberId, Meta) of
-        error ->
-            #{meta=>Meta, sessions=>[]};
-        {ok, #{meta:=Meta0}=MemberInfo0} ->
-            MemberInfo0#{meta:=maps:merge(Meta0, Meta)}
-    end,
-    State2 = do_update_member(MemberId, MemberInfo, State),
-    #{meta:=Meta2, sessions:=Sessions2} = MemberInfo,
-    SessionData = lists:map(
-        fun(SessId) -> {ok, Session} = do_find_session(SessId, State), Session end,
-        Sessions2),
-    {reply, {ok, #{meta=>Meta2, sessions=>SessionData}}, State2};
-
-handle_call({remove_member, MemberId}, _From, #state{room=Room}=State) ->
-    case do_find_member(MemberId, State) of
-        error ->
-            {reply, {error, member_not_found}, State};
-        {ok, #{session:=Sessions}} ->
-            State2 = remove_sessions(Sessions, State),
-            #{members:=Members} = Room,
-            Members2 = maps:remove(MemberId, Members),
-            State2 = State#state{room=?ROOM(#{members=>Members2}, Room)},
-            {reply, {ok, [Sessions]}, State2}
-    end;
-
-handle_call({add_session, Type, MemberId, Config}, _From, State) ->
+handle_call({add_session, Type, MemberId, ConnId, Config}, _From, State) ->
     restart_timer(State),
-    case do_find_member(MemberId, State) of
-        {ok, #{sessions:=Sessions}=MemberInfo} ->
-            case add_session(Type, MemberId, Config, State) of
-                {ok, SessId, State2} ->
-                    State3 = case Config of
-                        #{register:=Link} ->
-                            links_add(Link, {member, SessId}, State2);
-                        _ ->
-                            State2
-                    end,
-                    MemberInfo2 = MemberInfo#{sessions:=[SessId|Sessions]},
-                    State4 = do_update_member(MemberId, MemberInfo2, State3),
-                    {reply, {ok, SessId}, State4};
-                {error, Error} ->
-                    {reply, {error, Error}, State}
-            end;
-        error ->
-            {reply, {error, member_not_found}, State}
+    case add_session(Type, MemberId, ConnId, Config, State) of
+        {ok, SessId, State2} ->
+            State3 = case Config of
+                #{register:=Link} ->
+                    links_add(Link, {member, SessId}, State2);
+                _ ->
+                    State2
+            end,
+            {reply, {ok, SessId, self()}, State3};
+        {error, Error} ->
+            {reply, {error, Error}, State}
     end;
+
+handle_call({get_member_sessions, MemberId}, _From, State) ->
+    SessIds = get_member_all_sessions(MemberId, all, State),
+    {reply, {ok, SessIds}, State};
 
 handle_call({remove_session, SessId}, _From, State) ->
-    restart_timer(State),
     State2 = remove_sessions([SessId], State),
     {reply, ok, State2};
+
+handle_call({remove_member, MemberId}, _From, State) ->
+    restart_timer(State),
+    SessIds = get_member_all_sessions(MemberId, all, State),
+    State2 = remove_sessions(SessIds, State),
+    {reply, {ok, SessIds}, State2};
+
+handle_call({remove_member_conn, MemberId, ConnId}, _From, State) ->
+    restart_timer(State),
+    SessIds = get_member_all_sessions(MemberId, ConnId, State),
+    State2 = remove_sessions(SessIds, State),
+    {reply, {ok, SessIds}, State2};
+
+
 
 
 % handle_call({update_publisher, MemberId, Config}, _From, State) ->
@@ -638,7 +615,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 handle_cast({send_room_info, Data}, State) ->
-    {noreply, do_event({info, Data}, State)};
+    {noreply, do_event({room_info, Data}, State)};
 
 handle_cast({send_member_info, MemberId, Data}, State) ->
     case do_find_member(MemberId, State) of
@@ -684,7 +661,10 @@ handle_cast(Msg, State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
+    #state{stop_reason=Stop} = State,
     case links_down(Ref, State) of
+        {ok, _, _, State2} when Stop /= false ->
+            {noreply, State2};
         {ok, nkmedia_room, _, State2} ->
             ?LLOG(warning, "media room down", [], State2),
             do_stop(media_room_down, State2);
@@ -798,72 +778,39 @@ do_cast(Id, Msg) ->
 
 
 %% @private
-do_find_member(MemberId, #state{room=#{members:=Members}}) ->
-    maps:find(MemberId, Members).
-        
-
-%% @private
-do_update_member(MemberId, MemberInfo, #state{room=#{members:=Members}=Room}=State) ->
-    Members2 = maps:put(MemberId, MemberInfo, Members),
-    State#state{room=?ROOM(#{members=>Members2}, Room)}.
-
-
-%% @private
-do_find_session(SessId, #state{room=#{sessions:=Sessions}}) ->
-    maps:find(SessId, Sessions).
-        
-
-%% @private
-do_update_session(SessId, Session, #state{room=#{sessions:=Sessions}=Room}=State) ->
-    Sessions2 = maps:put(SessId, Session#{session_id=>SessId}, Sessions),
-    State#state{room=?ROOM(#{sessions=>Sessions2}, Room)}.
-
-
-
-%% @private
--spec add_session(publish|{listen, session_id()}, member_id(), map(), #state{}) ->
+-spec add_session(publish|{listen, session_id()}, member_id(), conn_id(), 
+                  map(), #state{}) ->
     {ok, session_id(), #state{}} | {error, nkservice:error()}.
 
-add_session(Type, MemberId, Config, State) ->
+add_session(Type, MemberId, ConnId, Config, State) ->
     #state{srv_id=SrvId, id=RoomId, backend=Backend} = State,
     SessConfig1 = maps:with(session_opts(), Config),
     SessConfig2 = SessConfig1#{
-        register => {nkcollab_room, RoomId, self()},
         backend => Backend,
-        room_id => RoomId
+        room_id => RoomId,
+        register => {nkcollab_room, RoomId, self()}
     },
     SessData1 = maps:with(session_data_keys(), Config),
+    SessData2 = SessData1#{
+        started => nklib_util:l_timestamp()
+    },
     case Type of
         publish ->
             SessType = publish,
             SessConfig3 = SessConfig2,
-            SessData2 = SessData1#{
-                class => publish,
-                started => nklib_util:l_timestamp()
-            };
+            SessData3 = SessData2#{class => publish};
         {listen, PubId} ->
             SessType = listen,
-            SessConfig3 = SessConfig2#{
-                publisher_id => PubId
-            },
-            SessData2 = SessData1#{
-                class => listen,
-                started => nklib_util:l_timestamp(),
-                publisher_id => PubId
-            }
+            SessConfig3 = SessConfig2#{publisher_id => PubId},
+            SessData3 = SessData2#{class => listen, publisher_id => PubId}
     end,
     case nkmedia_session:start(SrvId, SessType, SessConfig3) of
         {ok, SessId, Pid} ->
             State2 = links_add(SessId, {session, MemberId}, Pid, State),
-            Event = case Type of
-                publish ->
-                    {started_publish_session, SessData2};
-                {listen, _} ->
-                    {started_listen_session, SessData2}
-            end,
-            {ok, State3} = do_event(Event, State2),
-            State4 = do_update_session(SessId, SessData2, State3),
-            {ok, SessId, State4};
+            {ok, State3} = do_event({started_session, SessData3}, State2),
+            State4 = do_update_session(SessId, SessData3, State3),
+            State5 = do_member_add_session(MemberId, ConnId, SessId, State4),
+            {ok, SessId, State5};
         {error, Error} ->
             {error, Error}
     end.
@@ -875,29 +822,49 @@ remove_sessions([], State) ->
 
 remove_sessions([SessId|Rest], State) ->
     nkmedia_session:stop(SessId, member_stop),
-    case do_find_session(SessId, State) of
-        {ok, #{member_id:=MemberId, class:=Class}=Session} ->
-            State2 = links_remove(SessId, State),
-            Session2 = Session#{stopped_time=>nklib_util:l_timestamp()},
-            State3 = do_update_session(SessId, Session2, State2),
-            Event = case Class of
-                publish -> 
-                    {stopped_publish_session, Session2};
-                listen -> 
-                    {stopped_listen_session, Session2}
-            end,
-            State4 = do_event(Event, State3),
-            State5 = case do_find_member(MemberId, State4) of
-                {ok, #{sessions:=Sessions}=MemberInfo1} ->
-                    MemberInfo2 = MemberInfo1#{sessions:=Sessions--[SessId]},
-                    do_update_member(MemberId, MemberInfo2, State4);
-                error ->
-                    State4
-            end,
-            remove_sessions(Rest, State5);
+    State2 = case do_find_session(SessId, State) of
+        {ok, Session} ->            
+            do_remove_session(SessId, Session, State);
         error ->
-            remove_sessions(Rest, State)
-    end.
+            State
+    end,
+    remove_sessions(Rest, State2).
+
+
+%% @private
+do_remove_session(SessId, Session, State) ->
+    #{member_id:=MemberId, member_conn_id:=ConnId} = Session,
+    State2 = links_remove(SessId, State),
+    Session2 = Session#{stopped_time=>nklib_util:l_timestamp()},
+    State3 = do_update_session(SessId, Session2, State2),
+    State4 = do_event({stopped_session, Session2}, State3),
+    do_member_remove_session(MemberId, ConnId, SessId, State4).
+
+
+% %% @private
+% do_remove_member_conns(_MemberId, [], Acc, State) ->
+%     {ok, Acc, State};
+
+% do_remove_member_conns(MemberId, [ConnId|Rest], Acc,State) ->
+%     case do_find_member(MemberId, State) of
+%         error ->
+%             do_remove_member_conns(MemberId, Rest, Acc, State);
+%         {ok, #{session:=Sessions}=MemberInfo} ->
+%             case maps:find(ConnId, Sessions) of
+%                 {ok, SessIds} ->
+%                     State2 = remove_sessions(SessIds, State),
+%                     Sessions2 = maps:remove(ConnId, Sessions),
+%                     MemberInfo2 = case map_size(Sessions2) of
+%                         0 -> delete;
+%                         _ -> MemberInfo#{sessions:=Sessions2}
+%                     end,
+%                     State3 = do_update_member(MemberId, MemberInfo2, State2),
+%                     do_remove_member_conns(MemberId, Rest, SessIds++Acc, State3);
+%                 error ->
+%                     do_remove_member_conns(MemberId, Rest, Acc, State)
+%             end
+%     end.
+
 
 
 
@@ -928,7 +895,10 @@ do_stop(Reason, #state{stop_reason=false, id=Id, room=Room}=State) ->
     ?LLOG(notice, "stopped: ~p", [Reason], State),
     #{sessions:=Sessions} = Room,
     State2 = remove_sessions(maps:keys(Sessions), State),
-    nkmedia_room:stop(Id),
+    case nkmedia_room:stop(Id) of
+        ok -> ok;
+        Other -> ?LLOG(warning, "error stopping base room: ~p", [Other], State)
+    end,
     % Give time for possible registrations to success and capture stop event
     timer:sleep(100),
     State3 = do_event({stopped, Reason}, State2),
@@ -1052,6 +1022,85 @@ do_event_members(Event, #state{id=Id}=State) ->
 
 
 %% @private
+do_find_member(MemberId, #state{room=#{members:=Members}}) ->
+    maps:find(MemberId, Members).
+        
+
+%% @private
+do_update_member(MemberId, delete, #state{room=#{members:=Members}=Room}=State) ->
+    Members2 = maps:remove(MemberId, Members),
+    State#state{room=?ROOM(#{members=>Members2}, Room)};
+
+do_update_member(MemberId, MemberInfo, #state{room=#{members:=Members}=Room}=State) ->
+    Members2 = maps:put(MemberId, MemberInfo, Members),
+    State#state{room=?ROOM(#{members=>Members2}, Room)}.
+
+
+%% @private
+do_member_add_session(MemberId, ConnId, SessId, State) ->
+    case do_find_member(MemberId, State) of
+        {ok, MemberInfo} -> ok;
+        error -> MemberInfo = #{}
+    end,
+    MemberSessions = maps:get(sessions, MemberInfo, #{}),
+    MemberSessionIds = [SessId|maps:get(ConnId, MemberSessions, [])],
+    MemberInfo2 = maps:put(ConnId, MemberSessions, MemberSessionIds),
+    do_update_member(MemberId, MemberInfo2, State).
+
+
+%% @private
+do_member_remove_session(MemberId, ConnId, SessId, State) ->
+    case do_find_member(MemberId, State) of
+        {ok, #{sessions:=Sessions}=MemberInfo} ->
+            case maps:find(ConnId, Sessions) of
+                {ok, SessIds} ->
+                    MemberInfo2 = case SessIds -- [SessId] of
+                        [] ->
+                            Sessions2 = maps:remove(ConnId, Sessions),
+                            case map_size(Sessions2) of
+                                0 -> delete;
+                                _ -> MemberInfo#{sessions:=Sessions2}
+                            end;
+                        SessIds2 ->
+                            Sessions2 = maps:put(ConnId, SessIds2, Sessions),
+                            MemberInfo#{sessions:=Sessions2}
+                    end,
+                    do_update_member(MemberId, MemberInfo2, State);
+                error ->
+                    State
+            end;
+        error ->
+            State
+    end.
+
+
+%% @private
+get_member_all_sessions(MemberId, ConnId, State) ->
+    case do_find_member(MemberId, State) of
+        error ->
+            [];
+        {ok, #{session:=Sessions}} when ConnId==all ->
+            lists:flatten(maps:values(Sessions));
+        {ok, #{session:=Sessions}} ->
+            maps:get(ConnId, Sessions)
+    end.
+
+
+
+%% @private
+do_find_session(SessId, #state{room=#{sessions:=Sessions}}) ->
+    maps:find(SessId, Sessions).
+        
+
+%% @private
+do_update_session(SessId, Session, #state{room=#{sessions:=Sessions}=Room}=State) ->
+    Sessions2 = maps:put(SessId, Session#{session_id=>SessId}, Sessions),
+    State#state{room=?ROOM(#{sessions=>Sessions2}, Room)}.
+
+
+
+
+%% @private
 handle(Fun, Args, State) ->
     nklib_gen_server:handle_any(Fun, Args, State, #state.srv_id, #state.room).
 
@@ -1105,9 +1154,6 @@ session_opts() ->
         no_answer_trickle_ice,
         trickle_ice_timeout,
         sdp_type,
-        user_id,
-        user_session,
-        publisher_id,
         mute_audio,
         mute_video,
         mute_data,
@@ -1121,7 +1167,8 @@ session_data_keys() ->
         type, 
         device, 
         bitrate, 
-        session_meta, 
-        user_id, 
-        user_session
+        meta, 
+        announce,
+        member_id, 
+        member_conn_id
     ].

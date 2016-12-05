@@ -59,8 +59,7 @@
 -include_lib("nksip/include/nksip.hrl").
 
 
--define(URL1, "nkapic://127.0.0.1:9010").
--define(URL2, "nkapic://c2.netc.io:9010").
+-define(URL, "nkapic://127.0.0.1:9010").
 
 
 %% ===================================================================
@@ -131,17 +130,9 @@ connect() ->
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
     Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, Pid} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
+    {ok, _, Pid} = nkservice_api_client:start(SrvId, ?URL, Login, Fun, Data),
     Pid.
 
-connect2() ->
-    connect2(test, u1, #{}).
-
-connect2(SrvId, User, Data) ->
-    Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, Pid} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
-    Pid.
 
 get_client() ->
     [{_, Pid}|_] = nkservice_api_client:get_all(),

@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([cmd/3]).
--export([member_stopped/4, room_stopped/3, api_room_down/3]).
+-export([api_room_stopped/4, api_room_down/3]).
 
 -include_lib("nkservice/include/nkservice.hrl").
 -include_lib("nksip/include/nksip.hrl").
@@ -62,104 +62,77 @@ cmd(get_info, #api_req{data=#{room_id:=RoomId}}, State) ->
             {error, Error, State}
     end;
 
-cmd(get_presenters, #api_req{data=#{room_id:=RoomId}}, State) ->
-    case nkcollab_room:get_members(RoomId, presenter) of
-        {ok, Data} ->
-            {ok, Data, State};
+cmd(add_publish_session, Req, State) ->
+    #api_req{
+        data = #{room_id:=RoomId}=Data, 
+        user = MemberId, 
+        session_id = ConnId
+    } = Req,
+    Data2 = Data#{register => {nkcollab_api, self()}},
+    case nkcollab_room:add_publish_session(RoomId, MemberId, ConnId, Data2) of
+        {ok, SessId, Pid} ->
+            nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
+            session_reply(SessId, Data);
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(get_viewers, #api_req{data=#{room_id:=RoomId}}, State) ->
-    case nkcollab_room:get_members(RoomId, viewer) of
-        {ok, Data} ->
-            {ok, Data, State};
+cmd(add_listen_session, Req, State) ->
+    #api_req{
+        data = #{room_id:=RoomId, publisher_id:=PubId} = Data, 
+        user = MemberId, 
+        session_id = ConnId
+    } = Req,
+    Data2 = Data#{register => {nkcollab_api, self()}},
+    case nkcollab_room:add_listen_session(RoomId, MemberId, ConnId, PubId, Data2) of
+        {ok, SessId, Pid} ->
+            nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
+            session_reply(SessId, Data);
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(create_presenter, Req, State) ->
-    create_member(presenter, Req, State);
-
-cmd(create_viewer, Req, State) ->
-    create_member(viewer, Req, State);
-
-cmd(destroy_member, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId} = Data,
-    case nkcollab_room:destroy_member(RoomId, MemberId) of
-        ok ->
-            {ok, #{}, State};
+cmd(remove_session, Req, State) ->
+    #api_req{data=#{room_id:=RoomId, session_id:=SessId}} = Req,
+    case nkcollab_room:remove_session(RoomId, SessId) of
+        {ok, Reply} ->
+            {ok, Reply, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(update_publisher, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId} = Data,
-    case nkcollab_room:update_publisher(RoomId, MemberId, Data) of
-        {ok, SessId} ->
-            case session_reply(SessId, Data) of
-                {ok, Reply} ->
-                    {ok, Reply, State};
-                {error, Error} ->
-                    {error, Error}
-            end;
+cmd(remove_member, Req, State) ->
+    #api_req{data=#{room_id:=RoomId}, user=MemberId} = Req,
+    case nkcollab_room:remove_member(RoomId, MemberId) of
+        {ok, Reply} ->
+            {ok, Reply, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(remove_publisher, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId} = Data,
-    case nkcollab_room:remove_publisher(RoomId, MemberId) of
-        ok ->
-            {ok, #{}, State};
+
+% In the future, this call and next ones should check if user has the session
+cmd(update_publisher, Req, State) ->
+    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
+    case nkcollab_room:update_publisher(RoomId, SessId, Data) of
+        {ok, Reply} ->
+            {ok, Reply, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(add_listener, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId, presenter_id:=PresenterId} = Data,
-    case nkcollab_room:add_listener(RoomId, MemberId, PresenterId, Data) of
-        {ok, SessId} ->
-            case session_reply(SessId, Data) of
-                {ok, Reply} ->
-                    {ok, Reply, State};
-                {error, Error} ->
-                    {error, Error}
-            end;
+cmd(update_meta, Req, State) ->
+    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
+    case nkcollab_room:update_meta(RoomId, SessId, Data) of
+        {ok, Reply} ->
+            {ok, Reply, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(remove_listener, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId, presenter_id:=PresenterId} = Data,
-    case nkcollab_room:remove_listener(RoomId, MemberId, PresenterId) of
-        ok ->
-            {ok, #{}, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
-
-cmd(update_meta, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId, meta:=Meta} = Data,
-    case nkcollab_room:update_meta(RoomId, MemberId, Meta) of
-        ok ->
-            {ok, #{}, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
-
-cmd(update_media, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, member_id:=MemberId} = Data,
-    case nkcollab_room:update_media(RoomId, MemberId, Data) of
-        ok ->
-            {ok, #{}, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
-
-cmd(update_all_media, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId} = Data,
-    case nkcollab_room:update_all_media(RoomId, Data) of
+cmd(update_media, Req, State) ->
+    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
+    case nkcollab_room:update_media(RoomId, SessId, Data) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->
@@ -201,31 +174,21 @@ cmd(_Cmd, _Data, _State) ->
 
 
 %% ===================================================================
-%% Room callbacks
+%% API server callbacks
 %% ===================================================================
 
-%% @private The room has sent the event 'stopped_member'
-member_stopped(RoomId, MemberId, ApiPid, Room) ->
+%% @private Sent by the room when it is stopping
+%% We sent a message to the API session to remove the reg before 
+%% it receives the DOWN.
+api_room_stopped(RoomId, ApiPid, _Reason, Room) ->
     #{srv_id:=SrvId} = Room,
-    Event = get_room_event(SrvId, <<"*">>, RoomId, #{}),
-    nkservice_api_server:unsubscribe(ApiPid, Event, MemberId),
-    {ok, Room}.
-
-
-%% @private The room has sent the event 'stopped'
-room_stopped(RoomId, ApiPid, Room) ->
+    Event = get_room_event(SrvId, <<"*">>, RoomId, undefined),
+    nkservice_api_server:unsubscribe(ApiPid, Event, none),
     nkservice_api_server:unregister(ApiPid, {nkcollab_room, RoomId, self()}),
     {ok, Room}.
 
 
-
-
-%% ===================================================================
-%% API server callbacks
-%% ===================================================================
-
 %% @private The API server detected room has fallen
-
 api_room_down(RoomId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Collab Room ~s is down: ~p", [RoomId, Reason]),
@@ -238,32 +201,6 @@ api_room_down(RoomId, Reason, State) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
-
-create_member(Role, Req, State) ->
-    #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
-    #{room_id:=RoomId} = Data,
-    Config = Data#{
-        register => {nkcollab_api, self()},
-        user_id => User,
-        user_session => UserSession
-    },
-    case nkcollab_room:create_member(RoomId, Role, Config) of
-        {ok, MemberId, SessId, Pid} ->
-            nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
-            Body = maps:get(events_body, Data, #{}),
-            Event = get_room_event(SrvId, <<"*">>, RoomId, Body),
-            nkservice_api_server:subscribe(self(), Event, MemberId),
-            case session_reply(SessId, Data) of
-                {ok, Reply} ->
-                    {ok, Reply#{member_id=>MemberId}, State};
-                {error, Error} ->
-                    {error, Error}
-            end;
-        {error, Error} ->
-            {error, Error, State}
-    end.
-
-
 
 %% @private
 session_reply(SessId, Config) ->

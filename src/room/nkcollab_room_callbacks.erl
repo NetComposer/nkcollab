@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
--export([nkcollab_room_init/2, nkcollab_room_terminate/2, 
+-export([nkcollab_room_init/2, nkcollab_room_stop/2, nkcollab_room_terminate/2, 
          nkcollab_room_event/3, nkcollab_room_reg_event/4, nkcollab_room_member_event/5,
          nkcollab_room_reg_down/4,
          nkcollab_room_handle_call/3, nkcollab_room_handle_cast/2, 
@@ -91,6 +91,14 @@ error_code(_) -> continue.
     {ok, room()} | {error, term()}.
 
 nkcollab_room_init(_RoomId, Room) ->
+    {ok, Room}.
+
+
+%% @doc Called when the room stops
+-spec nkcollab_room_stop(Reason::term(), room()) ->
+    {ok, room()}.
+
+nkcollab_room_stop(_Reason, Room) ->
     {ok, Room}.
 
 

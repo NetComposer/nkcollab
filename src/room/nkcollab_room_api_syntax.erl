@@ -37,7 +37,7 @@ syntax(create, Syntax, Defaults, Mandatory) ->
             class => {enum, [sfu]},
             room_id => binary,
             backend => atom,
-            timeout => {integer, 5, 3*24*60*60},
+            timeout => {integer, 5, 24*60*60},
             audio_codec => {enum, [opus, isac32, isac16, pcmu, pcma]},
             video_codec => {enum , [vp8, vp9, h264]},
             bitrate => {integer, 0, none},
@@ -68,126 +68,62 @@ syntax(get_info, Syntax, Defaults, Mandatory) ->
         [room_id|Mandatory]
     };
 
-syntax(get_presenters, Syntax, Defaults, Mandatory) ->
+syntax(add_publish_session, Syntax, Defaults, Mandatory) ->
     {
-        Syntax#{room_id => binary},
+        session_opts(Syntax),
         Defaults, 
         [room_id|Mandatory]
     };
 
-syntax(create_presenter, Syntax, Defaults, Mandatory) ->
+syntax(add_listen_session, Syntax, Defaults, Mandatory) ->
     {
-        session_opts(Syntax#{
-            room_id => binary,
-            meta => map,
-            events_body => map
-        }),
-        Defaults,
-        [room_id|Mandatory]
-    };
-
-syntax(get_viewers, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{room_id => binary},
+        session_opts(Syntax#{publisher_id => binary}),
         Defaults, 
-        [room_id|Mandatory]
+        [room_id, publish_id|Mandatory]
     };
 
-
-syntax(create_viewer, Syntax, Defaults, Mandatory) ->
-    {
-        session_opts(Syntax#{
-            room_id => binary,
-            meta => map,
-            presenter_id => integer,
-            backend => atom,
-            events_body => map
-        }),
-        Defaults,
-        [room_id, presenter_id|Mandatory]
-    };
-
-syntax(destroy_member, Syntax, Defaults, Mandatory) ->
+syntax(remove_session, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
-            member_id => integer
+            session_id => binary
         },
-        Defaults,
-        [room_id, member_id|Mandatory]
+        Defaults, 
+        [room_id, session_id|Mandatory]
+    };
+
+syntax(remove_member, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{room_id=>binary},
+        Defaults, 
+        [room_id|Mandatory]
     };
 
 syntax(update_publisher, Syntax, Defaults, Mandatory) ->
     {
-        session_opts(Syntax#{
-            room_id => binary,
-            member_id => integer
-        }),
+        session_opts(Syntax#{session_id=>binary}),
         Defaults,
-        [room_id, member_id|Mandatory]
-    };
-
-syntax(remove_publisher, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{
-            room_id => binary,
-            member_id => integer
-        },
-        Defaults,
-        [room_id, member_id|Mandatory]
-    };
-
-syntax(add_listener, Syntax, Defaults, Mandatory) ->
-    {
-        session_opts(Syntax#{
-            room_id => binary,
-            member_id => integer,
-            presenter_id => integer
-        }),
-        Defaults,
-        [room_id, member_id|Mandatory]
-    };
-
-syntax(remove_listener, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{
-            room_id => binary,
-            
-            member_id => integer,
-            presenter_id => integer
-        },
-        Defaults,
-        [room_id, member_id|Mandatory]
+        [room_id, session_id|Mandatory]
     };
 
 syntax(update_meta, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
-            member_id => integer,
-            meta => map
+            session_id => binary
         },
         Defaults,
-        [room_id, member_id|Mandatory]
+        [room_id, session_id|Mandatory]
     };
 
 syntax(update_media, Syntax, Defaults, Mandatory) ->
     {
         media_opts(Syntax#{
             room_id => binary,
-            member_id => integer
+            session_id => binary
         }),
         Defaults,
-        [room_id, member_id|Mandatory]
-    };
-
-syntax(update_all_media, Syntax, Defaults, Mandatory) ->
-    {
-        media_opts(Syntax#{
-            room_id => binary
-        }),
-        Defaults,
-        [room_id|Mandatory]
+        [room_id, session_id|Mandatory]
     };
 
 syntax(send_broadcast, Syntax, Defaults, Mandatory) ->
@@ -243,15 +179,24 @@ get_member_info(Room) ->
 %% Internal
 %% ===================================================================
 
+session_opts(Syntax) ->
+    Syntax#{
+        room_id => binary,
+        type => binary,
+        device => binary,
+        meta => map,
+        annouce => map,
 
-session_opts(Data) ->
-    media_opts(Data#{
         offer => nkmedia_api_syntax:offer(),
         no_offer_trickle_ice => boolean,
         no_answer_trickle_ice => boolean,
-        trickle_ice_timeout => integer,
-        sdp_type => {enum, [rtp, webrtc]}
-    }).
+        trickle_ice_timeout => {integer, 100, 30000},
+        sdp_type => {enum, [webrtc, rtp]},    
+        mute_audio => boolean,
+        mute_video => boolean,
+        mute_data => boolean,
+        bitrate => {integer, 0, none}
+    }.
 
 
 media_opts(Data) ->

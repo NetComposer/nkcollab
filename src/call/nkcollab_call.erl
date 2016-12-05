@@ -478,7 +478,10 @@ handle_info({ring_timeout, Pos}, State) ->
     end;
 
 handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
+    #state{stop_reason=Stop} = State,
     case links_down(Ref, State) of
+        {ok, _, _, State2} when Stop /= false ->
+            {noreply, State2};
         {ok, Link, Data, State2} ->
             case Reason of
                 normal ->
