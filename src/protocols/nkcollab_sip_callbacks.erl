@@ -22,8 +22,7 @@
 -module(nkcollab_sip_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_syntax/0, plugin_defaults/0, plugin_config/2, 
-         plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0, plugin_syntax/0, plugin_defaults/0, plugin_config/2]).
 -export([error_code/1]).
 -export([nkcollab_sip_invite/5]).
 -export([nkcollab_sip_invite_ringing/2, nkcollab_sip_invite_rejected/1, 
@@ -106,14 +105,6 @@ plugin_config(Config, _Service) ->
     {ok, Config2, Cache}.
 
 
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB SIP (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB SIP (~p) stopping", [Name]),
-    {ok, Config}.
 
 
 

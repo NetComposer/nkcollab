@@ -21,8 +21,7 @@
 -module(nkcollab_janus_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_syntax/0, plugin_listen/2, 
-         plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0, plugin_syntax/0, plugin_listen/2]).
 -export([nkcollab_janus_init/2, nkcollab_janus_registered/2,
          nkcollab_janus_invite/4, nkcollab_janus_answer/4, nkcollab_janus_bye/3,
          nkcollab_janus_candidate/4,
@@ -65,17 +64,6 @@ plugin_listen(Config, #{id:=SrvId}) ->
         ws_proto => <<"janus-protocol">>
     },                                  
     [{Conns, maps:merge(ConnOpts, Opts)} || {Conns, ConnOpts} <- Listen].
-
-
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB JANUS Proto (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB JANUS Proto (~p) stopping", [Name]),
-    {ok, Config}.
-
 
 
 

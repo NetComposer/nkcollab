@@ -23,8 +23,7 @@
 -module(nkcollab_verto_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_syntax/0, plugin_listen/2, 
-         plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0, plugin_syntax/0, plugin_listen/2]).
 -export([error_code/1]).
 -export([nkcollab_verto_init/2, nkcollab_verto_login/3, 
          nkcollab_verto_invite/4, nkcollab_verto_bye/3,
@@ -76,16 +75,6 @@ plugin_listen(Config, #{id:=SrvId}) ->
         idle_timeout => ?VERTO_WS_TIMEOUT
     },                                  
     [{Conns, maps:merge(ConnOpts, Opts)} || {Conns, ConnOpts} <- Listen].
-
-
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB Verto (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB Verto (~p) stopping", [Name]),
-    {ok, Config}.
 
 
 

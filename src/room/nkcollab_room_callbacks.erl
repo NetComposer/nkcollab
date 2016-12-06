@@ -22,7 +22,7 @@
 -module(nkcollab_room_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0]).
 -export([nkcollab_room_init/2, nkcollab_room_stop/2, nkcollab_room_terminate/2, 
          nkcollab_room_event/3, nkcollab_room_reg_event/4, nkcollab_room_member_event/5,
          nkcollab_room_reg_down/4,
@@ -50,15 +50,6 @@
 plugin_deps() ->
     [nkcollab, nkcollab_call, nkmedia_room].
 
-
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB ROOM (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB ROOM (~p) stopping", [Name]),
-    {ok, Config}.
 
 
 

@@ -22,7 +22,7 @@
 -module(nkcollab_call_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0]).
 -export([nkcollab_call_init/2, nkcollab_call_terminate/2, 
          nkcollab_call_expand/3, nkcollab_call_invite/4, 
          nkcollab_call_event/3, nkcollab_call_reg_event/4, 
@@ -54,17 +54,6 @@
 
 plugin_deps() ->
     [nkcollab].
-
-
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB CALL (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB CALL (~p) stopping", [Name]),
-    {ok, Config}.
-
 
 
 %% ===================================================================

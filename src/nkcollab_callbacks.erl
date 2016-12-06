@@ -23,7 +23,7 @@
 -module(nkcollab_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([plugin_deps/0, plugin_start/2, plugin_stop/2]).
+-export([plugin_deps/0]).
 -export([error_code/1]).
 -export([api_server_cmd/2, api_server_syntax/4]).
 
@@ -51,18 +51,6 @@
 
 plugin_deps() ->
     [nkmedia, nkmedia_fs, nkmedia_kms, nkmedia_janus].
-
-
-plugin_start(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB CORE (~s) starting", [Name]),
-    {ok, Config}.
-
-
-plugin_stop(Config, #{name:=Name}) ->
-    lager:info("Plugin NkCOLLAB CORE (~p) stopping", [Name]),
-    {ok, Config}.
-
-
 
 
 %% ===================================================================
