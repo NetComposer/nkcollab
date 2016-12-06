@@ -86,7 +86,7 @@
 
 -type member_info() :: 
     #{
-        sessions => #{conn_id() => [session_id()]}
+        sessions => [session_id()]
     }.
 
 
@@ -179,7 +179,7 @@ start(Srv, Config) ->
             case nkmedia_room:start(Srv, Config2#{class=>sfu}) of
                 {ok, RoomId, RoomPid} ->
                     {ok, BaseRoom} = nkmedia_room:get_room(RoomPid),
-                    BaseRoom2 = maps:with([srv_id, backend], BaseRoom),
+                    BaseRoom2 = maps:with(room_ops(), BaseRoom),
                     Config3 = maps:merge(Config2, BaseRoom2),
                     {ok, Pid} = gen_server:start(?MODULE, [Config3, RoomPid], []),
                     {ok, RoomId, Pid};
@@ -375,8 +375,11 @@ get_all() ->
 -spec media_session_event(id(), session_id(), nkmedia_session:event()) ->
     ok | {error, nkservice:error()}.
 
-media_session_event(RoomId, SessId, {status, Class, Data}) ->
-    send_session_info(RoomId, SessId, Data#{class=>Class});
+media_session_event(RoomId, SessId, {info, Info, Data}) ->
+    send_session_info(RoomId, SessId, Data#{info=>Info});
+
+media_session_event(RoomId, SessId, {status, Data}) ->
+    send_session_info(RoomId, SessId, Data#{info=>status});
 
 media_session_event(_RoomId, _SessId, _Event) ->
     ok.
@@ -1144,6 +1147,16 @@ links_fold(Fun, Acc, #state{links=Links}) ->
 restart_timer(#state{id=RoomId}) ->
     nkmedia_room:restart_timeout(RoomId).
 
+
+
+room_ops() -> 
+    [
+        srv_id, 
+        backend, 
+        timeout,
+        audio_codec,
+        video_codec
+    ].
 
 
 %% @private

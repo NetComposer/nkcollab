@@ -82,7 +82,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        log_level => debug,
+        debug => [{nkmedia_janus_client, #{nkpacket=>false}}],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -144,7 +144,10 @@ list() ->
     cmd(get_list, #{}).
 
 create(Data) ->
-    cmd(create, Data).
+    case cmd(create, Data) of
+        {ok, _} -> timer:sleep(200);
+        {error, {304002, _}} -> ok
+    end.
 
 destroy(Id) ->
     cmd(destroy, #{room_id=>Id}).
@@ -294,7 +297,7 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
         }
     },
     case create_presenter(Dest, Ws, Opts) of
-        {ok, _MemberId, SessId, Answer} ->
+        {ok, SessId, Answer} ->
             % We register Verto at the session, so that when the session stops,
             % it will be detected (in nkcollab_verto_callbacks)
             {ok, SessPid} = 
@@ -412,26 +415,21 @@ create_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
     RoomConfig = #{
         class => sfu, 
         room_id => RoomId,
-        backend => nkmedia_janus, 
-        bitrate => 100000
+        backend => nkmedia_janus
     },
-    case create(RoomConfig) of
-        {ok, _} -> timer:sleep(199);
-        {error, {304002, _}} -> ok
-    end,
+    ok = create(RoomConfig),
     Opts2 = Opts#{
         room_id => RoomId,
         meta => #{module=>nkcollab_test_room, type=>presenter}
     },
-    case cmd(WsPid, create_presenter, Opts2) of
+    case cmd(WsPid, add_publish_session, Opts2) of
         {ok, 
             #{
-                <<"member_id">> := MemberId, 
                 <<"session_id">> := SessId, 
                 <<"answer">> := #{<<"sdp">>:=SDP}
             }
         } ->
-            {ok, MemberId, SessId, #{sdp=>SDP}};
+            {ok, SessId, #{sdp=>SDP}};
         {error, Error} ->
             {error, Error}
     end;

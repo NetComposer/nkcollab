@@ -70,7 +70,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        log_level => debug,
+        debug => [nkmedia_session],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
