@@ -42,7 +42,7 @@
 %% - if the session is killed, it is detected
 %%   (api_server_reg_down() -> api_call_down() here)
 cmd(create, Req, State) ->
-    #api_req{srv_id=SrvId, data=Data, user=User, session_id=UserSession} = Req,
+    #api_req{srv_id=SrvId, data=Data, user_id=User, session_id=UserSession} = Req,
     #{dest:=Dest} = Data,
     Config = Data#{
         caller_link => {nkcollab_api, self()},
@@ -171,7 +171,7 @@ cmd(Cmd, _Req, State) ->
 %% it receives the DOWN.
 api_call_hangup(CallId, ApiPid, _Reason, Call) ->
     #{srv_id:=SrvId} = Call,
-    Event = get_call_event(SrvId, CallId, undefined),
+    Event = get_call_event(SrvId, CallId, #{}),
     nkservice_api_server:unsubscribe(ApiPid, Event),
     nkservice_api_server:unregister(ApiPid, {nkcollab_call, CallId, self()}),
     {ok, Call}.
@@ -183,7 +183,7 @@ api_call_hangup(CallId, ApiPid, _Reason, Call) ->
 api_call_down(CallId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Call ~s is down: ~p", [CallId, Reason]),
-    Event = get_call_event(SrvId, CallId, undefined),
+    Event = get_call_event(SrvId, CallId, #{}),
     nkservice_api_server:unsubscribe(self(), Event),
     nkcollab_call_api_events:call_down(SrvId, CallId).
 
@@ -273,7 +273,6 @@ get_call_event(SrvId, CallId, Body) ->
         srv_id = SrvId,     
         class = <<"collab">>, 
         subclass = <<"call">>,
-        type = <<"*">>,
         obj_id = CallId,
         body = Body
     }.

@@ -65,7 +65,7 @@ cmd(get_info, #api_req{data=#{room_id:=RoomId}}, State) ->
 cmd(add_publish_session, Req, State) ->
     #api_req{
         data = #{room_id:=RoomId}=Data, 
-        user = MemberId, 
+        user_id = MemberId, 
         session_id = ConnId
     } = Req,
     Data2 = Data#{register => {nkcollab_api, self()}},
@@ -80,7 +80,7 @@ cmd(add_publish_session, Req, State) ->
 cmd(add_listen_session, Req, State) ->
     #api_req{
         data = #{room_id:=RoomId, publisher_id:=PubId} = Data, 
-        user = MemberId, 
+        user_id = MemberId, 
         session_id = ConnId
     } = Req,
     Data2 = Data#{register => {nkcollab_api, self()}},
@@ -102,7 +102,7 @@ cmd(remove_session, Req, State) ->
     end;
 
 cmd(remove_member, Req, State) ->
-    #api_req{data=#{room_id:=RoomId}, user=MemberId} = Req,
+    #api_req{data=#{room_id:=RoomId}, user_id=MemberId} = Req,
     case nkcollab_room:remove_member(RoomId, MemberId) of
         {ok, Reply} ->
             {ok, Reply, State};
@@ -149,7 +149,7 @@ cmd(set_candidate_end, Req, State) ->
     nkmedia_api:cmd(set_candidate_end, Req, State);
 
 cmd(send_broadcast, ApiReq, State) ->
-    #api_req{data=Data, user=User} = ApiReq,
+    #api_req{data=Data, user_id=User} = ApiReq,
     #{room_id:=RoomId, member_id:=MemberId, msg:=Msg} = Data,
     RoomMsg = Msg#{user_id=>User},
     case nkcollab_room:broadcast(RoomId, MemberId, RoomMsg) of
@@ -182,7 +182,7 @@ cmd(_Cmd, _Data, _State) ->
 %% it receives the DOWN.
 api_room_stopped(RoomId, ApiPid, _Reason, Room) ->
     #{srv_id:=SrvId} = Room,
-    Event = get_room_event(SrvId, <<"*">>, RoomId, undefined),
+    Event = get_room_event(SrvId, RoomId),
     nkservice_api_server:unsubscribe(ApiPid, Event, none),
     nkservice_api_server:unregister(ApiPid, {nkcollab_room, RoomId, self()}),
     {ok, Room}.
@@ -192,7 +192,7 @@ api_room_stopped(RoomId, ApiPid, _Reason, Room) ->
 api_room_down(RoomId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Collab Room ~s is down: ~p", [RoomId, Reason]),
-    Event = get_room_event(SrvId, <<"*">>, RoomId, undefined),
+    Event = get_room_event(SrvId, RoomId),
     nkservice_api_server:unsubscribe(self(), Event, all),
     nkcollab_room_api_events:room_down(SrvId, RoomId).
 
@@ -223,14 +223,12 @@ session_reply(SessId, Config) ->
 
 
 %% @private
-get_room_event(SrvId, Type, RoomId, Body) ->
+get_room_event(SrvId, RoomId)->
     #event{
         srv_id = SrvId, 
         class = <<"collab">>, 
         subclass = <<"room">>,
-        type = nklib_util:to_binary(Type),
-        obj_id = RoomId,
-        body = Body
+        obj_id = RoomId
     }.
 
 

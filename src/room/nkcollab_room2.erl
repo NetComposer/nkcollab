@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Room Plugin
--module(nkcollab_room).
+-module(nkcollab_room2).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 

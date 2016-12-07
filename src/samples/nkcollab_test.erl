@@ -266,11 +266,11 @@ play_to_janus() ->
 %% nkcollab_verto callbacks
 %% ===================================================================
 
-nkcollab_verto_login(Login, Pass, Verto) ->
+nkcollab_verto_login(Login, _Pass, Verto) ->
     case binary:split(Login, <<"@">>) of
         [User, _] ->
             Verto2 = Verto#{user=>User},
-            lager:info("Verto login: ~s (pass ~s)", [User, Pass]),
+            % lager:info("Verto login: ~s (pass ~s)", [User, Pass]),
             {true, User, Verto2};
         _ ->
             {false, Verto}

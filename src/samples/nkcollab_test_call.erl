@@ -422,7 +422,7 @@ start_call(Dest, Offer, CallId, Ws, Events, _Link) ->
     },
     case cmd(Ws, create, Config) of
         {ok, #{<<"call_id">>:=CallId}} -> 
-            subscribe(Ws, CallId, '*', Events),
+            subscribe(Ws, CallId, <<>>, Events),
             ok;
         {error, Error} ->
             {error, Error}
@@ -453,9 +453,9 @@ start_call(Ws, Callee, Config) ->
 api_client_fun(#api_req{class=core, cmd=event, data=Data}, UserData) ->
     #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
-    Sub = maps:get(<<"subclass">>, Data, <<"*">>),
-    Type = maps:get(<<"type">>, Data, <<"*">>),
-    ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
+    Sub = maps:get(<<"subclass">>, Data, <<>>),
+    Type = maps:get(<<"type">>, Data, <<>>),
+    ObjId = maps:get(<<"obj_id">>, Data, <<>>),
     Body = maps:get(<<"body">>, Data, #{}),
     lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
                  [User, Class, Sub, Type, ObjId, Body]),

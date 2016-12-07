@@ -61,7 +61,8 @@ plugin_listen(Config, #{id:=SrvId}) ->
         class => {nkcollab_janus, SrvId},
         % get_headers => [<<"user-agent">>],
         idle_timeout => ?JANUS_WS_TIMEOUT,
-        ws_proto => <<"janus-protocol">>
+        ws_proto => <<"janus-protocol">>,
+        debug => false
     },                                  
     [{Conns, maps:merge(ConnOpts, Opts)} || {Conns, ConnOpts} <- Listen].
 

@@ -59,12 +59,11 @@ send_event(SrvId, Class, Id, Type, Body) ->
     ok.
 
 send_event(SrvId, Class, Id, Type, Body, Pid) ->
-    lager:notice("COLLAB EVENT (~s:~s:~s): ~p", [Class, Type, Id, Body]),
     Event = #event{
         srv_id = SrvId,     
         class = <<"collab">>, 
-        subclass = nklib_util:to_binary(Class),
-        type = nklib_util:to_binary(Type),
+        subclass = Class,
+        type = Type,
         obj_id = Id,
         body = Body,
         pid = Pid

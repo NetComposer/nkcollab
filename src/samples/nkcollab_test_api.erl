@@ -1,3 +1,4 @@
+
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
@@ -70,7 +71,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        debug => [nkmedia_session],
+        debug => [nkservice_events],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -477,7 +478,7 @@ incoming_config(Backend, Type, Offer, Opts) ->
 start_session(WsPid, Config, Events) when is_pid(WsPid) ->
     case nkservice_api_client:cmd(WsPid, media, session, create, Config) of
         {ok, #{<<"session_id">>:=SessId}} -> 
-            subscribe(WsPid, SessId, '*', Events),
+            subscribe(WsPid, SessId, <<>>, Events),
             {ok, SessPid} = nkmedia_session:find(SessId),
             {ok, SessId, SessPid};
         {error, {_Code, Txt}} -> 
@@ -516,9 +517,9 @@ start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
 api_client_fun(#api_req{class=core, cmd=event, data = Data}, UserData) ->
     #{user:=User} = UserData,
     Class = maps:get(<<"class">>, Data),
-    Sub = maps:get(<<"subclass">>, Data, <<"*">>),
-    Type = maps:get(<<"type">>, Data, <<"*">>),
-    ObjId = maps:get(<<"obj_id">>, Data, <<"*">>),
+    Sub = maps:get(<<"subclass">>, Data, <<>>),
+    Type = maps:get(<<"type">>, Data, <<>>),
+    ObjId = maps:get(<<"obj_id">>, Data, <<>>),
     Body = maps:get(<<"body">>, Data, #{}),
     % lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
 

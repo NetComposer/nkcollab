@@ -30,12 +30,24 @@
          conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3]).
 -export([print/3]).
 
--define(LLOG(Type, Txt, Args, State),
-    lager:Type("NkMEDIA Janus Proto (~s) "++Txt, [State#state.user | Args])).
+% To debug, set debug => [nkcollab_janus]
+% To debug nkpacket, set debug=>true in listener (nkcollab_janus_callbacks)
 
--define(PRINT(Txt, Args, State), 
-        % print(Txt, Args, State),    % Uncomment this for detailed logs
-        ok).
+-define(DEBUG(Txt, Args, State),
+    case erlang:get(nkcollab_janus_debug) of
+        true -> ?LLOG(debug, Txt, Args, State);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args, State),
+    lager:Type("NkCOLLAB Janus (~s) "++Txt, [State#state.user | Args])).
+
+-define(MSG(Txt, Args, State),
+    case erlang:get(nkcollab_janus_debug) of
+        true -> print(Txt, Args, State);
+        _ -> ok
+    end).
+
 
 
 -define(OP_TIME, 15000).            % Maximum operation time
@@ -208,7 +220,9 @@ conn_init(NkPort) ->
         janus = Janus
     },
     nklib_proc:put(?MODULE, <<>>),
-    lager:info("NkMEDIA Janus Proto new connection (~s, ~p)", [Remote, self()]),
+    set_log(State1),
+    nkservice_util:register_for_changes(SrvId),
+    ?LLOG(info, "NkMEDIA Janus Proto new connection (~s, ~p)", [Remote, self()], State1),
     {ok, State2} = handle(nkcollab_janus_init, [NkPort], State1),
     {ok, State2}.
 
@@ -228,7 +242,7 @@ conn_parse({text, Data}, NkPort, State) ->
         Json ->
             Json
     end,
-    ?PRINT("receiving ~s", [Msg], State),
+    ?MSG("receiving ~s", [Msg], State),
     case Msg of
         #{<<"janus">>:=BinCmd, <<"transaction">>:=_Trans} ->
             Cmd = case catch binary_to_existing_atom(BinCmd, latin1) of
@@ -283,14 +297,24 @@ conn_handle_cast(Msg, NkPort, State) ->
 -spec conn_handle_info(term(), nkpacket:nkport(), #state{}) ->
     {ok, #state{}} | {stop, Reason::term(), #state{}}.
 
-conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, _NkPort, State) ->
+conn_handle_info({'DOWN', Ref, process, _Pid, Reason}=Info, _NkPort, State) ->
     case links_down(Ref, State) of
         {ok, CallId, Link, State2} ->
-            ?LLOG(notice, "monitor process down for ~s (~p)", [CallId, Link], State),
+            case Reason of
+                normal ->
+                    ?DEBUG("monitor process down for ~s (~p)", 
+                           [CallId, Link], State);
+                _ ->
+                    ?LLOG(info, "monitor process down for ~s (~p)", 
+                            [CallId, Link], State)
+            end,
             {stop, normal, State2};
         not_found ->
             handle(nkcollab_janus_handle_info, [Info], State)
     end;
+
+conn_handle_info({nkservice_updated, _SrvId}, _NkPort, State) ->
+    {ok, set_log(State)};
 
 conn_handle_info(Info, _NkPort, State) ->
     handle(nkcollab_janus_handle_info, [Info], State).
@@ -311,7 +335,7 @@ conn_stop(Reason, _NkPort, State) ->
 send_req({invite, CallId, Offer, Link}, From, NkPort, State) ->
     #{sdp:=SDP} = Offer,
     nklib_util:reply(From, ok),
-    % ?LLOG(info, "ordered INVITE (~s)", [CallId], State),
+    ?DEBUG("ordered INVITE (~s)", [CallId], State),
     Result = #{
         event => incomingcall, 
         username => unknown
@@ -325,12 +349,12 @@ send_req({invite, CallId, Offer, Link}, From, NkPort, State) ->
     send(Req, NkPort, State2#state{call_id=CallId});
 
 send_req({answer, CallId, #{sdp:=SDP}}, From, NkPort, State) ->
-    % ?LLOG(info, "ordered ANSWER (~s)", [CallId], State),
+    ?DEBUG("ordered ANSWER (~s)", [CallId], State),
     case links_get(CallId, State) of
         {ok, _Link} ->
             ok;
         not_found ->
-            ?LLOG(warning, "answer for unknown call: ~s", [CallId], State)
+            ?LLOG(info, "answer for unknown call: ~s", [CallId], State)
     end,
     Result = #{
         event => accepted, 
@@ -348,7 +372,7 @@ send_req({hangup, CallId, _Reason}, _From, _NkPort, #state{plugin=recordplay}=St
     {stop, normal, State2};
 
 send_req({hangup, CallId, Reason}, From, NkPort, State) ->
-    % ?LLOG(info, "ordered HANGUP (~s, ~p)", [CallId, Reason], State),
+    ?DEBUG("ordered HANGUP (~s, ~p)", [CallId, Reason], State),
     nklib_util:reply(From, ok),
     Result = #{
         event => hangup, 
@@ -385,7 +409,6 @@ send_req(_Op, _From, _NkPort, _State) ->
 process_client_req(create, Msg, NkPort, State) ->
 	Id = erlang:phash2(make_ref()),
 	Resp = make_resp(#{janus=>success, data=>#{id=>Id}}, Msg),
-    % lager:error("SESSION ID IS ~p", [Id]),
 	send(Resp, NkPort, State#state{session_id=Id});
 
 process_client_req(attach, Msg, NkPort, #state{session_id=SessionId}=State) ->
@@ -473,7 +496,7 @@ process_client_req(trickle, Msg, NkPort, #state{session_id=SessionId}=State) ->
             {ok, State2} = 
                 handle(nkcollab_janus_candidate, [CallId, Link, Candidate], State);
         not_found ->
-            ?LLOG(warning, "call not found on accept trickle", [], State),
+            ?LLOG(info, "call not found on accept trickle", [], State),
             hangup(self(), CallId, call_not_found),
             State2 = State
     end,
@@ -481,14 +504,14 @@ process_client_req(trickle, Msg, NkPort, #state{session_id=SessionId}=State) ->
     send(Resp, NkPort, State2);
 
 process_client_req(Cmd, _Msg, _NkPort, State) ->
-    ?LLOG(warning, "unexpected client REQ: ~s\n~p", [Cmd, _Msg], State),
+    ?LLOG(info, "unexpected client REQ: ~s\n~p", [Cmd, _Msg], State),
     {ok, State}.
 
 
 %% @private
 process_client_msg(register, Body, Msg, NkPort, State) ->
     #{<<"username">>:=User} = Body,
-    ?LLOG(info, "received REGISTER (~s)", [User], State),
+    ?DEBUG("received REGISTER (~s)", [User], State),
     nklib_proc:put(?MODULE, User),
     nklib_proc:put({?MODULE, user, User}),
     {ok, State2} = handle(nkcollab_janus_registered, [User], State),
@@ -500,15 +523,13 @@ process_client_msg(register, Body, Msg, NkPort, State) ->
 
 process_client_msg(call, Body, Msg, NkPort, #state{srv_id=SrvId}=State) ->
     CallId = nklib_util:uuid_4122(),
-    ?LLOG(info, "received CALL (~s)", [CallId], State),
+    ?DEBUG("received CALL (~s)", [CallId], State),
     #{<<"username">>:=Dest} = Body,
     #{<<"jsep">>:=JSep} = Msg,
     #{<<"type">>:=<<"offer">>, <<"sdp">>:=SDP} = JSep,
     Trickle = maps:get(<<"trickle">>, JSep, true),
-    ?LLOG(info, "janus offer, trickle: ~p", [Trickle], State),
+    ?DEBUG("janus offer, trickle: ~p", [Trickle], State),
     Offer = #{dest=>Dest, sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
-    % io:format("SDP: ~s\n", [SDP]),
-    % lager:notice("JSEP: ~p", [Msg#{<<"jsep">>=>maps:remove(<<"sdp">>, JSep)}]),
     case handle(nkcollab_janus_invite, [SrvId, CallId, Offer], State) of
         {ok, Link, State2} ->
             ok;
@@ -524,11 +545,11 @@ process_client_msg(call, Body, Msg, NkPort, #state{srv_id=SrvId}=State) ->
 
 process_client_msg(accept, _Body, Msg, NkPort, State) ->
     #state{call_id=CallId} = State,
-    ?LLOG(info, "received ACCEPT (~s)", [CallId], State),
+    ?DEBUG("received ACCEPT (~s)", [CallId], State),
     #{<<"jsep">>:=JSep} = Msg,
     #{<<"type">>:=<<"answer">>, <<"sdp">>:=SDP} = JSep,
     Trickle = maps:get(<<"trickle">>, JSep, true),
-    ?LLOG(info, "answer, trickle: ~p", [Trickle], State),
+    ?DEBUG("answer, trickle: ~p", [Trickle], State),
     Answer = #{sdp=>SDP, sdp_type=>webrtc, trickle_ice=>Trickle},
     case links_get(CallId, State) of
         {ok, Link} ->
@@ -561,7 +582,7 @@ process_client_msg(list, _Body, Msg, NkPort, #state{plugin=videocall}=State) ->
     send(Resp, NkPort, State);
 
 process_client_msg(list, _Body, Msg, NkPort, #state{plugin=recordplay}=State) ->
-    ?LLOG(info, "received LIST", [], State),
+    ?DEBUG("received LIST", [], State),
     List = case nkmedia_app:get(nkcollab_janus_play_reg) of
         #{
             call_id := CallId,
@@ -590,7 +611,7 @@ process_client_msg(play, Body, Msg, NkPort, State) ->
         } ->
             case erlang:phash2(CallId) of
                 Id ->
-                    ?LLOG(info, "received PLAY (~s)", [CallId], State),
+                    ?DEBUG("received PLAY (~s)", [CallId], State),
                     State2 = links_add(CallId, {play, Pid}, caller, State),
                     Data = #{
                         recordplay => event,
@@ -611,7 +632,7 @@ process_client_msg(start, _Body, Msg, NkPort, State) ->
     #{call_id := CallId} = nkmedia_app:get(nkcollab_janus_play_reg),
     nkmedia_app:del(nkcollab_janus_play_reg),
     #state{call_id=CallId} = State,
-    ?LLOG(info, "received START (~s)", [CallId], State),
+    ?DEBUG("received START (~s)", [CallId], State),
     case handle(nkcollab_janus_start, [CallId, #{sdp=>SDP}], State) of
         {ok, State2} ->
             ok;
@@ -624,11 +645,11 @@ process_client_msg(start, _Body, Msg, NkPort, State) ->
 
 
 process_client_msg(stop, _Body, _Msg, _NkPort, State) ->
-    ?LLOG(warning, "received STOP", [], State),
+    ?DEBUG("received STOP", [], State),
     {ok, State};
 
 process_client_msg(Cmd, _Body, _Msg, _NkPort, State) ->
-    ?LLOG(warning, "unexpected client MESSAGE: ~s", [Cmd], State),
+    ?LLOG(info, "unexpected client MESSAGE: ~s", [Cmd], State),
     {ok, State}.
 
 
@@ -742,12 +763,12 @@ do_call(JanusPid, Msg) ->
 
 %% @private
 send(Msg, NkPort, State) ->
-    ?PRINT("sending ~s", [Msg], State),
+    ?MSG("sending ~s", [Msg], State),
     case send(Msg, NkPort) of
         ok -> 
             {ok, State};
         error -> 
-            ?LLOG(notice, "error sending reply:", [], State),
+            ?LLOG(info, "error sending reply:", [], State),
             {stop, normal, State}
     end.
 
@@ -755,6 +776,16 @@ send(Msg, NkPort, State) ->
 %% @private
 send(Msg, NkPort) ->
     nkpacket_connection:send(NkPort, Msg).
+
+
+%% @private
+set_log(#state{srv_id=SrvId}=State) ->
+    Debug = case nkservice_util:get_debug_info(SrvId, ?MODULE) of
+        {true, _} -> true;
+        _ -> false
+    end,
+    put(nkcollab_janus_debug, Debug),
+    State.
 
 
 %% @private
@@ -811,5 +842,5 @@ print(Txt, [#{}=Map], State) ->
     end,
     ok;
 print(Txt, Args, State) ->
-    ?LLOG(info, Txt, Args, State).
+    ?LLOG(debug, Txt, Args, State).
 

@@ -30,17 +30,29 @@
 -export([print/3]).
 -export_type([verto_id/0, call_id/0, verto/0]).
 
+% To debug, set debug => [nkcollab_verto]
+% To debug nkpacket, set debug=>true in listener (nkcollab_verto_callbacks)
+
+-define(DEBUG(Txt, Args, State),
+    case erlang:get(nkcollab_verto_debug) of
+        true -> ?LLOG(debug, Txt, Args, State);
+        _ -> ok
+    end).
+
 -define(LLOG(Type, Txt, Args, State),
     lager:Type("NkMEDIA VERTO (~s) "++Txt, [State#state.user | Args])).
 
--define(PRINT(Txt, Args, State), 
-        % print(Txt, Args, State),    % Uncomment this for detailed logs
-        ok).
+-define(MSG(Txt, Args, State),
+    case erlang:get(nkcollab_verto_debug) of
+        true -> print(Txt, Args, State);
+        _ -> ok
+    end).
 
 
 -define(OP_TIMEOUT, 15).            % Maximum operation time (not for invite)
 -define(CALL_TIMEOUT, 180).         % 
 
+-include_lib("nkpacket/include/nkpacket.hrl").
 
 
 
@@ -185,7 +197,10 @@ conn_init(NkPort) ->
         verto = Verto
     },
     nklib_proc:put(?MODULE, <<>>),
-    lager:info("NkMEDIA Verto new connection (~s, ~p)", [Remote, self()]),
+    set_log(State1),
+    nkservice_util:register_for_changes(SrvId),
+    ?LLOG(info, "NkMEDIA Verto new connection (~s, ~p)", 
+          [Remote, self()], State1),
     {ok, State2} = handle(nkcollab_verto_init, [NkPort], State1),
     {ok, State2}.
 
@@ -202,7 +217,7 @@ conn_parse({text, <<"#SPU ", BytesBin/binary>>}, _NkPort, State) ->
     Bytes = nklib_util:to_integer(BytesBin),
     262144 = Bytes,
     Now = nklib_util:l_timestamp(),
-    ?PRINT("client BW start test (SPU, ~p)", [Bytes], State),
+    ?MSG("client BW start test (SPU, ~p)", [Bytes], State),
     State2 = State#state{bw_bytes=Bytes, bw_time=Now},
     {ok, State2};
 
@@ -218,10 +233,10 @@ conn_parse({text, <<"#SPE">>}, NkPort, State) ->
     Now = nklib_util:l_timestamp(),
     case (Now - Time) div 1000 of
         0 -> 
-            ?LLOG(warning, "client bw test error1", [], State),
+            ?LLOG(info, "client bw test error1", [], State),
             {ok, State};
         ClientDiff when Bytes==0 ->
-            ?PRINT("client BW completed (~p msecs, ~p Kbps)", 
+            ?MSG("client BW completed (~p msecs, ~p Kbps)", 
                    [ClientDiff, 262144*8 div ClientDiff], State),
             %% We send start of server bw test
             Msg1 = <<"#SPU ", (nklib_util:to_binary(ClientDiff))/binary>>,
@@ -229,20 +244,20 @@ conn_parse({text, <<"#SPE">>}, NkPort, State) ->
                 ok ->
                     case send_bw_test(NkPort) of
                         {ok, ServerDiff} ->
-                            ?PRINT("BW server completed (~p msecs, ~p Kpbs)",
+                            ?MSG("BW server completed (~p msecs, ~p Kpbs)",
                                    [ServerDiff, 262144*8 div ServerDiff], State),
                             %% We send end of server bw test
                             Msg2 = <<"#SPD ", (nklib_util:to_binary(ServerDiff))/binary>>,
                             send(Msg2, NkPort, State);
                         {error, Error} ->
-                           ?LLOG(warning, "server bw test error2: ~p", [Error], State),
+                           ?LLOG(info, "server bw test error2: ~p", [Error], State),
                            {stop, normal, State}
                     end;
                 {error, _} ->
                     {stop, normal, State}
             end;
         _ ->
-            ?LLOG(warning, "client bw test error3", [], State),
+            ?LLOG(info, "client bw test error3", [], State),
             {stop, normal, State}
     end;
 
@@ -254,7 +269,7 @@ conn_parse({text, Data}, NkPort, State) ->
         Json ->
             Json
     end,
-    ?PRINT("received ~s", [Msg], State),
+    ?MSG("received ~s", [Msg], State),
     case nkmedia_fs_util:verto_class(Msg) of
         {{req, Method}, _Id} ->
             process_client_req(Method, Msg, NkPort, State);
@@ -263,7 +278,7 @@ conn_parse({text, Data}, NkPort, State) ->
                 {Op, State2} ->
                     process_client_resp(Op, Resp, Msg, NkPort, State2);
                 not_found ->
-                    ?LLOG(warning, "received client response for unknown req: ~p", 
+                    ?LLOG(info, "received client response for unknown req: ~p", 
                           [Msg], State),
                     {ok, State}
             end;
@@ -310,10 +325,17 @@ conn_handle_cast(Msg, NkPort, State) ->
 -spec conn_handle_info(term(), nkpacket:nkport(), #state{}) ->
     {ok, #state{}} | {stop, Reason::term(), #state{}}.
 
-conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, _NkPort, State) ->
+conn_handle_info({'DOWN', Ref, process, _Pid, Reason}=Info, _NkPort, State) ->
     case links_down(Ref, State) of
         {ok, CallId, Link, State2} ->
-            ?LLOG(notice, "monitor process down for ~s (~p)", [CallId, Link], State),
+            case Reason of
+                normal ->
+                    ?DEBUG("monitor process down for ~s (~p)", 
+                          [CallId, Link], State);
+                _ -> 
+                    ?LLOG(info, "monitor process down for ~s (~p)", 
+                          [CallId, Link], State)
+            end,
             {stop, normal, State2};
         not_found ->
             handle(nkcollab_verto_handle_info, [Info], State)
@@ -323,11 +345,14 @@ conn_handle_info({timeout, _, {op_timeout, OpId}}, _NkPort, State) ->
     case extract_op(OpId, State) of
         {Op, State2} ->
             user_reply(Op, {error, timeout}),
-            ?LLOG(warning, "operation ~p timeout!", [OpId], State),
+            ?LLOG(info, "operation ~p timeout!", [OpId], State),
             {stop, normal, State2};
         not_found ->
             {ok, State}
     end;
+
+conn_handle_info({nkservice_updated, _SrvId}, _NkPort, State) ->
+    {ok, set_log(State)};
 
 conn_handle_info(Info, _NkPort, State) ->
     handle(nkcollab_verto_handle_info, [Info], State).
@@ -394,7 +419,7 @@ process_client_req(<<"login">>, Msg, NkPort, State) ->
                         true -> 
                             ok;
                         {false, Pid} -> 
-                            ?LLOG(notice, "duplicated Verto login: ~p", [Pid], State)
+                            ?LLOG(info, "duplicated Verto login: ~p", [Pid], State)
                     end,
                     nklib_proc:put(?MODULE, Login2),
                     nklib_proc:put({?MODULE, user, Login2}),
@@ -478,7 +503,7 @@ process_client_req(<<"verto.answer">>, Msg, NkPort, State) ->
     % io:format("SDP ANSWER FROM VERTO: ~s\n", [SDP]),
     case extract_op({wait_answer, CallId}, State) of
         not_found ->
-            ?LLOG(warning, "received unexpected answer", [], State),
+            ?LLOG(notice, "received unexpected answer", [], State),
             hangup(self(), CallId, call_not_found),
             State3 = State;
         {_Op, State2} ->
@@ -493,7 +518,7 @@ process_client_req(<<"verto.answer">>, Msg, NkPort, State) ->
                             hangup(self(), CallId, Reason)
                     end;
                 not_found ->
-                    ?LLOG(warning, "received unexpected answer", [], State),
+                    ?LLOG(notice, "received unexpected answer", [], State),
                     hangup(self(), CallId, call_not_found),
                     State3 = State
             end
@@ -539,7 +564,7 @@ process_client_req(<<"verto.info">>, Msg, NkPort, State) ->
         {ok, Link} ->
             handle(nkcollab_verto_dtmf, [CallId, Link, DTMF], State);
         not_found ->
-            ?LLOG(warning, "received unexpected dtmf", [], State),
+            ?LLOG(notice, "received unexpected dtmf", [], State),
             {ok, State}
     end,
     #state{verto_sess_id=VertoSessId} = State2,
@@ -548,7 +573,7 @@ process_client_req(<<"verto.info">>, Msg, NkPort, State) ->
     send(Resp, NkPort, State2);
 
 process_client_req(Method, Msg, _NkPort, State) ->
-    ?LLOG(warning, "unexpected client request ~s: ~p", [Method, Msg], State),
+    ?LLOG(info, "unexpected client request ~s: ~p", [Method, Msg], State),
     {ok, State}.
 
 
@@ -649,12 +674,12 @@ extract_op(OpId, #state{trans=AllOps}=State) ->
 
 %% @private
 send(Msg, NkPort, State) ->
-    ?PRINT("sending ~s", [Msg], State),
+    ?MSG("sending ~s", [Msg], State),
     case send(Msg, NkPort) of
         ok -> 
             {ok, State};
         error -> 
-            ?LLOG(notice, "error sending reply:", [], State),
+            ?LLOG(info, "error sending reply:", [], State),
             {stop, normal, State}
     end.
 
@@ -673,12 +698,21 @@ make_error(Code, Txt, Msg) ->
 handle(Fun, Args, State) ->
     nklib_gen_server:handle_any(Fun, Args, State, #state.srv_id, #state.verto).
     
+%% @private
+set_log(#state{srv_id=SrvId}=State) ->
+    Debug = case nkservice_util:get_debug_info(SrvId, ?MODULE) of
+        {true, _} -> true;
+        _ -> false
+    end,
+    put(nkcollab_verto_debug, Debug),
+    State.
+
 
 %% @private
 print(Txt, [#{}=Map], State) ->
     print(Txt, [nklib_json:encode_pretty(Map)], State);
 print(Txt, Args, State) ->
-    ?LLOG(info, Txt, Args, State).
+    ?LLOG(debug, Txt, Args, State).
 
 
 %%%% Bandwith test

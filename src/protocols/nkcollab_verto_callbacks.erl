@@ -69,10 +69,12 @@ plugin_syntax() ->
 plugin_listen(Config, #{id:=SrvId}) ->
     % verto_listen will be already parsed
     Listen = maps:get(verto_listen, Config, []),
+
     Opts = #{
         class => {nkcollab_verto, SrvId},
         % get_headers => [<<"user-agent">>],
-        idle_timeout => ?VERTO_WS_TIMEOUT
+        idle_timeout => ?VERTO_WS_TIMEOUT,
+        debug => false
     },                                  
     [{Conns, maps:merge(ConnOpts, Opts)} || {Conns, ConnOpts} <- Listen].
 
