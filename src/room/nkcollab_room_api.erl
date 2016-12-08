@@ -72,7 +72,12 @@ cmd(add_publish_session, Req, State) ->
     case nkcollab_room:add_publish_session(RoomId, MemberId, ConnId, Data2) of
         {ok, SessId, Pid} ->
             nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
-            session_reply(SessId, Data);
+            case session_reply(SessId, Data) of
+                {ok, Reply} ->
+                    {ok, Reply, State};
+                {error, Error} ->
+                    {error, Error, State}
+            end;
         {error, Error} ->
             {error, Error, State}
     end;

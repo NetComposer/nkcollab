@@ -193,10 +193,9 @@ get_member_info(Room) ->
 session_opts(Syntax) ->
     Syntax#{
         room_id => binary,
-        type => binary,
+        class => binary,
         device => binary,
         meta => map,
-        annouce => map,
 
         offer => nkmedia_session_api_syntax:offer(),
         no_offer_trickle_ice => boolean,

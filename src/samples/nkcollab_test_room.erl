@@ -59,7 +59,7 @@
 -include_lib("nksip/include/nksip.hrl").
 
 
--define(URL, "nkapic://127.0.0.1:9010").
+-define(URL, "wss://127.0.0.1:9010").
 
 
 %% ===================================================================
@@ -82,7 +82,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        debug => [{nkmedia_janus_client, #{nkpacket=>false}}],
+        debug => [nkmedia_room, nkcollab_room],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -290,13 +290,13 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
     #{dest:=Dest} = Offer,
     Opts = #{
         offer => Offer,
-        no_answer_trickle_ice => true,
-        events_body => #{
-            verto_call_id => CallId,
-            verto_pid => pid2bin(self())
-        }
+        no_answer_trickle_ice => true
     },
-    case create_presenter(Dest, Ws, Opts) of
+    Events = #{
+        verto_call_id => CallId,
+        verto_pid => pid2bin(self())
+    },
+    case create_presenter(Dest, Ws, Opts, Events) of
         {ok, SessId, Answer} ->
             % We register Verto at the session, so that when the session stops,
             % it will be detected (in nkcollab_verto_callbacks)
@@ -350,14 +350,14 @@ nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
     #{dest:=Dest} = Offer,
     Opts = #{
         offer => Offer,
-        no_answer_trickle_ice => true,
-        events_body => #{
-            janus_call_id => CallId,
-            janus_pid => pid2bin(self())
-        }
+        no_answer_trickle_ice => true
     },
-    case create_presenter(Dest, Ws, Opts) of
-        {ok, _MemberId, SessId, Answer} ->
+    Events = #{
+        janus_call_id => CallId,
+        janus_pid => pid2bin(self())
+    },
+    case create_presenter(Dest, Ws, Opts, Events) of
+        {ok, SessId, Answer} ->
             % We register Janus at the session, so that when the session stops,
             % it will be detected (in nkcollab_janus_callbacks)
             {ok, SessPid} = 
@@ -411,16 +411,18 @@ nkcollab_janus_terminate(_Reason, Janus) ->
 %% ===================================================================
 
 %% @private
-create_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
+create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
     RoomConfig = #{
         class => sfu, 
-        room_id => RoomId,
+        room_id => test_room,
         backend => nkmedia_janus
     },
     ok = create(RoomConfig),
     Opts2 = Opts#{
-        room_id => RoomId,
-        meta => #{module=>nkcollab_test_room, type=>presenter}
+        room_id => test_room,
+        type => type1,
+        device => device1,
+        meta => #{my_meta=>Meta}
     },
     case cmd(WsPid, add_publish_session, Opts2) of
         {ok, 
@@ -434,24 +436,24 @@ create_presenter(<<"p", RoomId/binary>>, WsPid, Opts) ->
             {error, Error}
     end;
 
-create_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
-    Opts2 = Opts#{
-        room_id => RoomId,
-        member_id => 1
-    },
-    case cmd(WsPid, update_publisher, Opts2) of
-        {ok, 
-            #{
-                <<"session_id">> := SessId, 
-                <<"answer">> := #{<<"sdp">>:=SDP}
-            }
-        } ->
-            {ok, 1, SessId, #{sdp=>SDP}};
-        {error, Error} ->
-            {error, Error}
-    end;
+% create_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
+%     Opts2 = Opts#{
+%         room_id => RoomId,
+%         member_id => 1
+%     },
+%     case cmd(WsPid, update_publisher, Opts2) of
+%         {ok, 
+%             #{
+%                 <<"session_id">> := SessId, 
+%                 <<"answer">> := #{<<"sdp">>:=SDP}
+%             }
+%         } ->
+%             {ok, 1, SessId, #{sdp=>SDP}};
+%         {error, Error} ->
+%             {error, Error}
+%     end;
 
-create_presenter(_Dest, _WsPid, _Opts) ->
+create_presenter(_Dest, _WsPid, _Opts, _Events) ->
     {error, unknown_destination}.
 
 
