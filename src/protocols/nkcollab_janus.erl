@@ -222,7 +222,7 @@ conn_init(NkPort) ->
     nklib_proc:put(?MODULE, <<>>),
     set_log(State1),
     nkservice_util:register_for_changes(SrvId),
-    ?LLOG(info, "NkMEDIA Janus Proto new connection (~s, ~p)", [Remote, self()], State1),
+    ?DEBUG("NkMEDIA Janus Proto new connection (~s, ~p)", [Remote, self()], State1),
     {ok, State2} = handle(nkcollab_janus_init, [NkPort], State1),
     {ok, State2}.
 

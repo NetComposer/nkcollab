@@ -169,8 +169,9 @@ cmd(get_all_broadcasts, #api_req{data=Data}, State) ->
     end;
 
 cmd(timelog, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId} = Data,
-    case nkcollab_room:timelog(RoomId, maps:remove(room_id, Data)) of
+    #{room_id:=RoomId, msg:=Msg} = Data,
+    Body = maps:get(body, Data, #{}),
+    case nkcollab_room:timelog(RoomId, Body#{msg=>Msg}) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->

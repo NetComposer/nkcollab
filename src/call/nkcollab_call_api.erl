@@ -158,8 +158,9 @@ cmd(get_list, _Req, State) ->
 
 
 cmd(timelog, #api_req{data=Data}, State) ->
-    #{call_id:=CallId} = Data,
-    case nkcollab_call:timelog(CallId, maps:remove(call_id, Data)) of
+    #{call_id:=CallId, msg:=Msg} = Data,
+    Body = maps:get(body, Data, #{}),
+    case nkcollab_call:timelog(CallId, Body#{msg=>Msg}) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->

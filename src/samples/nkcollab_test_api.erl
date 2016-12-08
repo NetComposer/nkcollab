@@ -1,4 +1,3 @@
-
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
@@ -47,8 +46,8 @@
 -include_lib("nksip/include/nksip.hrl").
 
 
--define(URL1, "nkapic://127.0.0.1:9010").
--define(URL2, "nkapic://c2.netc.io:9010").
+-define(URL, "wss://127.0.0.1:9010").
+% -define(URL, "wss://c2.netc.io:9010").
 
 
 %% ===================================================================
@@ -71,7 +70,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        debug => [nkservice_events],
+        debug => [nkmedia_room],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -116,13 +115,7 @@ plugin_deps() ->
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
     Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
-    C.
-
-connect2(SrvId, User, Data) ->
-    Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL, Login, Fun, Data),
     C.
 
 get_client() ->
@@ -171,6 +164,11 @@ candidate(Pid, SessId, #candidate{a_line=Line, m_id=Id, m_index=Index}) ->
     Data = #{sdpMid=>Id, sdpMLineIndex=>Index, candidate=>Line},
     cmd(Pid, SessId, set_candidate, Data).
 
+talking(S, Bool) ->
+    cmd(S, update_status, #{talking=>Bool, no_events=>true}).
+
+timelog(S, Msg) ->
+    cmd(S, timelog, #{msg=>Msg, body=>#{module=>?MODULE}}).
 
 
 %% Room
@@ -216,6 +214,8 @@ subscribe(WsPid, SessId, Type, Body) ->
 subscribe_all(WsPid) ->
     Data = #{class=>media},
     nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
+
+
 
 
 
@@ -322,7 +322,7 @@ nkcollab_verto_answer(_CallId, _Link, _Answer, Verto) ->
 % @private Called when we receive BYE from Verto
 nkcollab_verto_bye(_CallId, {api_test_session, SessId, WsPid}, Verto) ->
     #{test_api_server:=WsPid} = Verto,
-    lager:info("Verto Session BYE for ~s (~p)", [SessId, WsPid]),
+    lager:debug("Verto Session BYE for ~s (~p)", [SessId, WsPid]),
     {ok, _} = cmd(WsPid, SessId, destroy, #{}),
     {ok, Verto};
 
@@ -386,7 +386,7 @@ nkcollab_janus_answer(_CallId, _Link, _Answer, Janus) ->
 
 %% @private BYE from Janus
 nkcollab_janus_bye(_CallId, {api_test_session, SessId, WsPid}, Janus) ->
-    lager:notice("Janus Session BYE for ~s (~p)", [SessId, WsPid]),
+    lager:debug("Janus Session BYE for ~s (~p)", [SessId, WsPid]),
     {ok, _} = cmd(WsPid, SessId, destroy, #{}),
     {ok, Janus};
 
@@ -514,13 +514,9 @@ start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
 
 
 %% @private
-api_client_fun(#api_req{class=core, cmd=event, data = Data}, UserData) ->
+api_client_fun(#api_req{class=event, data=Event}, UserData) ->
     #{user:=User} = UserData,
-    Class = maps:get(<<"class">>, Data),
-    Sub = maps:get(<<"subclass">>, Data, <<>>),
-    Type = maps:get(<<"type">>, Data, <<>>),
-    ObjId = maps:get(<<"obj_id">>, Data, <<>>),
-    Body = maps:get(<<"body">>, Data, #{}),
+    #event{class=Class, subclass=Sub, type=Type, obj_id=ObjId, body=Body} = Event,
     % lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
 
     Sender = case Body of
@@ -555,7 +551,7 @@ api_client_fun(#api_req{class=core, cmd=event, data = Data}, UserData) ->
                 {janus, CallId, Pid} ->
                     nkcollab_janus:hangup(Pid, CallId);
                 unknown ->
-                    lager:notice("UNMANAGED TEST CLIENT SESSION STOP: ~p", [Data])
+                    lager:notice("UNMANAGED TEST CLIENT SESSION STOP: ~p", [Event])
             end;
         _ ->
             lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
