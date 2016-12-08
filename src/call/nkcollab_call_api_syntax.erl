@@ -59,8 +59,8 @@ syntax(accepted, Syntax, Defaults, Mandatory) ->
         Syntax#{
             call_id => binary,
             callee => map,
-            offer => nkmedia_api_syntax:offer(),
-            answer => nkmedia_api_syntax:answer(),
+            offer => nkmedia_session_api_syntax:offer(),
+            answer => nkmedia_session_api_syntax:answer(),
             subscribe => boolean,
             events_body => any
         },
@@ -123,6 +123,17 @@ syntax(get_list, Syntax, Defaults, Mandatory) ->
         Mandatory
     };
     
+syntax(timelog, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            call_id => binary,
+            msg => binary,
+            body => map
+        },
+        Defaults,
+        [call_id, msg|Mandatory]
+    };
+
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.
 
@@ -158,7 +169,7 @@ get_call_info(Call) ->
 
 session_opts(Data) ->
     media_opts(Data#{
-        offer => nkmedia_api_syntax:offer(),
+        offer => nkmedia_session_api_syntax:offer(),
         no_offer_trickle_ice => boolean,
         no_answer_trickle_ice => boolean,
         trickle_ice_timeout => integer,

@@ -140,13 +140,13 @@ cmd(update_media, Req, State) ->
     end;
 
 cmd(set_answer, Req, State) ->
-    nkmedia_api:cmd(set_answer, Req, State);
+    nkmedia_session_api:cmd(set_answer, Req, State);
 
 cmd(set_candidate, Req, State) ->
-    nkmedia_api:cmd(set_candidate, Req, State);
+    nkmedia_session_api:cmd(set_candidate, Req, State);
 
 cmd(set_candidate_end, Req, State) ->
-    nkmedia_api:cmd(set_candidate_end, Req, State);
+    nkmedia_session_api:cmd(set_candidate_end, Req, State);
 
 cmd(send_broadcast, ApiReq, State) ->
     #api_req{data=Data, user_id=User} = ApiReq,
@@ -164,6 +164,15 @@ cmd(get_all_broadcasts, #api_req{data=Data}, State) ->
     case nkcollab_room:get_all_msgs(RoomId) of
         {ok, List} ->
             {ok, List, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(timelog, #api_req{data=Data}, State) ->
+    #{room_id:=RoomId} = Data,
+    case nkcollab_room:timelog(RoomId, maps:remove(room_id, Data)) of
+        ok ->
+            {ok, #{}, State};
         {error, Error} ->
             {error, Error, State}
     end;

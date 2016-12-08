@@ -496,7 +496,7 @@ start_invite(Num, WsPid, Config) ->
             {ok, SessId, SessPid} = start_session(WsPid, Config2, #{}),
             {ok, Offer} = cmd(WsPid, SessId, get_offer, #{}),
             SessLink = {nkmedia_session, SessId, SessPid},
-            Syntax = nkmedia_api_syntax:offer(),
+            Syntax = nkmedia_session_api_syntax:offer(),
             {ok, Offer2, _} = nklib_config:parse_config(Offer, Syntax, #{return=>map}),
             start_invite2(Dest, SessId, Offer2, SessLink)
     end.

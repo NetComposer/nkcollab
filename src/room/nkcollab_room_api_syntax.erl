@@ -147,13 +147,24 @@ syntax(get_all_broadcasts, Syntax, Defaults, Mandatory) ->
     };
 
 syntax(set_answer, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(set_answer, Syntax, Defaults, Mandatory);
+    nkmedia_session_api_syntax:syntax(set_answer, Syntax, Defaults, Mandatory);
 
 syntax(set_candidate, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(set_candidate, Syntax, Defaults, Mandatory);
+    nkmedia_session_api_syntax:syntax(set_candidate, Syntax, Defaults, Mandatory);
 
 syntax(set_candidate_end, Syntax, Defaults, Mandatory) ->
-    nkmedia_api_syntax:syntax(set_candidate_end, Syntax, Defaults, Mandatory);
+    nkmedia_session_api_syntax:syntax(set_candidate_end, Syntax, Defaults, Mandatory);
+
+syntax(timelog, Syntax, Defaults, Mandatory) ->
+    {
+        Syntax#{
+            room_id => binary,
+            msg => binary,
+            body => map
+        },
+        Defaults,
+        [room_id, msg|Mandatory]
+    };
 
 syntax(_Cmd, Syntax, Defaults, Mandatory) ->
     {Syntax, Defaults, Mandatory}.
@@ -187,7 +198,7 @@ session_opts(Syntax) ->
         meta => map,
         annouce => map,
 
-        offer => nkmedia_api_syntax:offer(),
+        offer => nkmedia_session_api_syntax:offer(),
         no_offer_trickle_ice => boolean,
         no_answer_trickle_ice => boolean,
         trickle_ice_timeout => {integer, 100, 30000},

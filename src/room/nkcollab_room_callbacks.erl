@@ -48,7 +48,7 @@
 
 
 plugin_deps() ->
-    [nkcollab, nkcollab_call, nkmedia_room].
+    [nkcollab, nkcollab_call].
 
 
 

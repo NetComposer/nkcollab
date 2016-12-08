@@ -508,7 +508,7 @@ add_listener(Num, RoomId, Member, Presenter, WsPid, Opts) ->
 
 
 start_invite(Dest, SessId, Offer) ->
-    Syntax = nkmedia_api_syntax:offer(),
+    Syntax = nkmedia_session_api_syntax:offer(),
     {ok, Offer2, _} = nklib_config:parse_config(Offer, Syntax, #{return=>map}),
     {ok, SessPid} = nkmedia_session:find(SessId),
     Link = {nkmedia_session, SessId, SessPid},

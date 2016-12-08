@@ -26,11 +26,20 @@
 -export([start/3, start_type/4, hangup/2, hangup_all/0]).
 -export([ringing/2, ringing/3, accepted/4, candidate/3, rejected/2]).
 -export([register/2, unregister/2, session_event/3]).
+-export([timelog/2]).
 -export([find/1, get_all/0, get_call/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3,
          handle_cast/2, handle_info/2]).
 -export_type([id/0, event/0]).
 
+
+% To debug, set debug => [nkcollab_call]
+
+-define(DEBUG(Txt, Args, State),
+    case erlang:get(nkcollab_call_debug) of
+        true -> ?LLOG(debug, Txt, Args, State);
+        _ -> ok
+    end).
 
 -define(LLOG(Type, Txt, Args, State),
     lager:Type("NkCOLLAB Call ~s "++Txt, [State#state.id | Args])).
@@ -106,11 +115,12 @@
     created                                                                 |
     {ringing, callee()}                                                     | 
     {accepted, callee()}                                                    | 
-    {stopped, nkservice:error()}                                               |
+    {stopped, nkservice:error()}                                            |
     {session_candidate, session_id(), nkmedia:candidate(), nklib:link()}    |
     {session_answer, session_id(), nkmedia:answer(), nklib:link()}          |
     {session_status, session_id(), atom(), map(), nklib:link()}             |
     {session_cancelled, session_id(), nklib:link()}                         |
+    {record, [{integer(), map()}]}                                          |
     destroyed.
 
 
@@ -250,6 +260,14 @@ session_event(CallId, SessId, Event) ->
     do_cast(CallId, {session_event, SessId, Event}).
 
 
+%% @doc Sends an info to the sesison
+-spec timelog(id(), map()) ->
+    ok | {error, nkservice:error()}.
+
+timelog(CallId, #{msg:=_}=Data) ->
+    do_cast(CallId, {timelog, Data}).
+
+
 %% @private
 -spec get_all() ->
     [{id(), pid()}].
@@ -294,7 +312,9 @@ get_call(CallId) ->
     invites = [] :: [#invite{}],
     pos = 0 :: integer(),
     stop_reason = false :: false | nkservice:error(),
-    call :: call()
+    call :: call(),
+    started :: nklib_util:l_timestamp(),
+    timelog = [] :: [{integer(), map()}]
 }).
 
 
@@ -307,14 +327,20 @@ init([#{srv_id:=SrvId, call_id:=CallId, dest:=Dest}=Call]) ->
     nklib_proc:put({?MODULE, CallId}),  
     CallerLink = maps:get(caller_link, Call, undefined),
     Backend = maps:get(backend, Call, none),
+    Call1 = Call#{
+        start_time => nklib_util:timestamp()
+    },
     State1 = #state{
         id = CallId, 
         srv_id = SrvId,
         backend = Backend,
         links = nklib_links:new(),
         caller_link = CallerLink,
-        call = Call
+        call = Call1,
+        started = nklib_util:l_timestamp()
     },
+    set_log(State1),
+    nkservice_util:register_for_changes(SrvId),
     ?LLOG(info, "starting to ~p (~p, ~p)", [Dest, Backend, self()], State1),
     State2 = case CallerLink of
         undefined ->
@@ -349,7 +375,7 @@ handle_call({ringing, Id, Callee}, _From, State) ->
 handle_call({accepted, Id, Reply, Callee}, _From, State) ->
     case find_invite_by_id(Id, State) of
         {ok, #invite{session_id=CalleeSessId}=Inv} ->
-            ?LLOG(info, "accepted from ~p", [Id], State),
+            ?DEBUG("accepted from ~p", [Id], State),
             #state{
                 id = CallId, 
                 backend = Backend,
@@ -368,7 +394,7 @@ handle_call({accepted, Id, Reply, Callee}, _From, State) ->
                     {reply, {error, Error}, State3}
             end;
         not_found ->
-            ?LLOG(info, "rejected accepted from ~p", [Id], State),
+            ?DEBUG("rejected accepted from ~p", [Id], State),
             {reply, {error, invite_not_found}, State}
     end;
 
@@ -376,12 +402,12 @@ handle_call(get_call, _From, #state{call=Call}=State) ->
     {reply, {ok, Call}, State};
 
 handle_call({register, Link}, _From, State) ->
-    ?LLOG(info, "proc registered (~p)", [Link], State),
+    ?DEBUG("proc registered (~p)", [Link], State),
     State2 = links_add(Link, reg, State),
     {reply, {ok, self()}, State2};
 
 handle_call({unregister, Link}, _From, State) ->
-    ?LLOG(info, "proc unregistered (~p)", [Link], State),
+    ?DEBUG("proc unregistered (~p)", [Link], State),
     State2 = links_remove(Link, State),
     {reply, ok, State2};
 
@@ -427,7 +453,7 @@ handle_cast({candidate, Id, Candidate}, State) ->
         #state{callee_session_id=Id} ->
             nkmedia_session:candidate(Id, Candidate);
         _ ->
-            ?LLOG(warning, "received candidate for unknown peer", [], State),
+            ?LLOG(info, "received candidate for unknown peer", [], State),
             hangup(self(), unknown_peer)
     end,
     {noreply, State};
@@ -444,8 +470,11 @@ handle_cast({rejected, Id}, State) ->
 handle_cast({session_event, SessId, Event}, State) ->
     do_session_event(SessId, Event, State);
 
+handle_cast({timelog, Data}, State) ->
+    {noreply, timelog(Data, State)};
+
 handle_cast({hangup, Reason}, State) ->
-    ?LLOG(info, "external hangup: ~p", [Reason], State),
+    ?DEBUG("external hangup: ~p", [Reason], State),
     do_stop(Reason, State);
 
 handle_cast(Msg, State) -> 
@@ -471,7 +500,7 @@ handle_info({launch_out, Pos}, State) ->
 handle_info({ring_timeout, Pos}, State) ->
     case find_invite_by_pos(Pos, State) of
         {ok, #invite{dest=Dest}} ->
-            ?LLOG(info, "call ring timeout for ~p (~p)", [Dest, Pos], State),
+            ?DEBUG("call ring timeout for ~p (~p)", [Dest, Pos], State),
             remove_invite(Pos, ring_timeout, State);
         not_found ->
             {noreply, State}
@@ -485,9 +514,9 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
         {ok, Link, Data, State2} ->
             case Reason of
                 normal ->
-                    ?LLOG(info, "linked ~p down (normal)", [Link], State);
+                    ?DEBUG("linked ~p down (normal)", [Link], State);
                 _ ->
-                    ?LLOG(notice, "linked ~p down (~p)", [Link, Reason], State)
+                    ?LLOG(info, "linked ~p down (~p)", [Link, Reason], State)
             end,
             case Data of
                 caller_link ->
@@ -520,6 +549,9 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
 handle_info(destroy, State) ->
     {stop, normal, State};
 
+handle_info({nkservice_updated, _SrvId}, State) ->
+    {noreply, set_log(State)};
+
 handle_info(Msg, #state{}=State) -> 
     handle(nkcollab_call_handle_info, [Msg], State).
 
@@ -535,7 +567,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, #state{stop_reason=Stop}=State) ->
+terminate(Reason, #state{stop_reason=Stop, timelog=Log}=State) ->
     case Stop of
         false ->
             Ref = nklib_util:uid(),
@@ -544,8 +576,9 @@ terminate(Reason, #state{stop_reason=Stop}=State) ->
         _ ->
             State2 = State
     end,
-    State3 = event(destroyed, State2),
-    {ok, _State4} = handle(nkcollab_call_terminate, [Reason], State3),
+    State3 = event({record, lists:reverse(Log)}, State2),
+    State4 = event(destroyed, State3),
+    {ok, _State5} = handle(nkcollab_call_terminate, [Reason], State4),
     ok.
 
 
@@ -554,12 +587,22 @@ terminate(Reason, #state{stop_reason=Stop}=State) ->
 %% ===================================================================
 
 %% @private
+set_log(#state{srv_id=SrvId}=State) ->
+    Debug = case nkservice_util:get_debug_info(SrvId, ?MODULE) of
+        {true, _} -> true;
+        _ -> false
+    end,
+    put(nkcollab_call_debug, Debug),
+    State.
+
+
+%% @private
 do_start(#state{call=#{dest:=Dest}}=State) ->
     {ok, ExtDests, State2} = handle(nkcollab_call_expand, [Dest, []], State),
     State3 = launch_invites(ExtDests, State2),
     #state{invites=Invs} = State3,
     Dests = [D2 || #invite{dest=D2} <- Invs],
-    ?LLOG(notice, "resolved invites for ~p: ~p", [Dest, Dests], State),
+    ?DEBUG("resolved invites for ~p: ~p", [Dest, Dests], State),
     {noreply, State3}.
 
 %% @private Generate data and launch messages
@@ -627,7 +670,7 @@ launch_out(Inv, #state{id=CallId, call=Call}=State) ->
                     launched_retry(Inv2, Secs, State3);
                 {remove, State3} ->
                     #invite{pos=Pos, dest=Dest} = Inv,
-                    ?LLOG(notice, "removing out ~p (~p)", [Dest, Pos], State),
+                    ?DEBUG("removing out ~p (~p)", [Dest, Pos], State),
                     remove_invite(Pos, call_rejected, State3)
             end;
         {error, Error, State2} ->
@@ -639,7 +682,7 @@ launch_out(Inv, #state{id=CallId, call=Call}=State) ->
 
 %% @private
 launched_out(#invite{pos=Pos, dest=Dest}=Inv, Link, State) ->
-    ?LLOG(info, "launched out ~p (~p) from ~p", [Dest, Pos, Link], State),
+    ?DEBUG("launched out ~p (~p) from ~p", [Dest, Pos, Link], State),
     Inv2 = Inv#invite{launched=true, link=Link},
     State2 = store_invite(Inv2, State),
     State3 = links_add(Link, callee_link, State2),
@@ -649,7 +692,7 @@ launched_out(#invite{pos=Pos, dest=Dest}=Inv, Link, State) ->
 %% @private
 launched_retry(Inv, Secs, State) ->
     #invite{pos=Pos, dest=Dest} = Inv, 
-    ?LLOG(notice, "retrying out ~p (~p, ~p secs)", [Dest, Pos, Secs], State),
+    ?DEBUG("retrying out ~p (~p, ~p secs)", [Dest, Pos, Secs], State),
     erlang:send_after(1000*Secs, self(), {launch_out, Pos}),
     {noreply, State}.
 
@@ -777,10 +820,10 @@ remove_invite(Pos, Reason, #state{invites=Invs}=State) ->
             stop_session(Inv, Reason),
             case Invs2 of
                 [] ->
-                    ?LLOG(info, "all invites removed", [], State),
+                    ?DEBUG("all invites removed", [], State),
                     do_stop(no_answer, State#state{invites=[]});
                 _ ->
-                    ?LLOG(info, "removed invite (~p)", [Pos], State),
+                    ?DEBUG("removed invite (~p)", [Pos], State),
                     {noreply, State#state{invites=Invs2}}
             end;
         false ->
@@ -830,7 +873,7 @@ find_sess_id(SessId, State) ->
 
 %% @private
 do_stop(Reason, #state{stop_reason=false}=State) ->
-    ?LLOG(notice, "stopped: ~p", [Reason], State),
+    ?DEBUG("stopped: ~p", [Reason], State),
     #state{
         caller_session_id = Caller, 
         callee_session_id = Callee
@@ -853,9 +896,9 @@ do_stop(_Reason, State) ->
 event(Event, #state{id=Id}=State) ->
     case Event of
         {answer, Link, _Ans} ->
-            ?LLOG(info, "sending 'event': ~p", [{answer, <<"sdp">>, Link}], State);
+            ?DEBUG("sending 'event': ~p", [{answer, <<"sdp">>, Link}], State);
         _ ->
-            ?LLOG(info, "sending 'event': ~p", [Event], State)
+            ?DEBUG("sending 'event': ~p", [Event], State)
     end,
     State2 = links_fold(
         fun(Link, _Data, AccState) -> reg_event(Event, Link, AccState) end,
@@ -916,6 +959,15 @@ find(CallId) ->
         [{undefined, Pid}] -> {ok, Pid};
         [] -> not_found
     end.
+
+
+%% @private
+add_timelog(Msg, State) when is_atom(Msg); is_binary(Msg) ->
+    add_timelog(#{msg=>Msg}, State);
+
+add_timelog(#{msg:=_}=Data, #state{started=Started, timelog=Log}=State) ->
+    Time = (nklib_util:l_timestamp() - Started) div 1000,
+    State#state{timelog=[{Time, Data}|Log]}.
 
 
 %% @private

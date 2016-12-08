@@ -30,6 +30,7 @@
 -export([update_publish_session/3, update_meta/3, update_session/3]).
 -export([send_room_info/2, send_session_info/3, send_member_info/3]).
 -export([broadcast/3, get_all_msgs/1]).
+-export([timelog/2]).
 -export([register/2, unregister/2, get_all/0]).
 -export([media_session_event/3, media_room_event/2]).
 -export([find/1, do_call/2, do_call/3, do_cast/2]).
@@ -37,6 +38,14 @@
          handle_cast/2, handle_info/2]).
 -export_type([id/0, room/0, event/0]).
 
+
+% To debug, set debug => [nkcollab_room]
+
+-define(DEBUG(Txt, Args, State),
+    case erlang:get(nkcollab_room_debug) of
+        true -> ?LLOG(debug, Txt, Args, State);
+        _ -> ok
+    end).
 
 -define(LLOG(Type, Txt, Args, State),
     lager:Type("NkCOLLAB Room ~s (~p) "++Txt, 
@@ -146,6 +155,7 @@
     {session_info, member_id(), session_id, map()}  |
     {broadcast, msg()}                              |
     {stopped, nkservice:error()}                    |
+    {record, [{integer(), map()}]}                  |
     destroyed.
 
 -type msg_id() :: integer().
@@ -333,6 +343,14 @@ send_member_info(Id, MemberId, Data) when is_map(Data) ->
     do_cast(Id, {send_member_info, MemberId, Data}).
 
 
+%% @doc Sends an info to the sesison
+-spec timelog(id(), map()) ->
+    ok | {error, nkservice:error()}.
+
+timelog(RoomId, #{msg:=_}=Data) ->
+    do_cast(RoomId, {timelog, Data}).
+
+
 %% @private
 -spec get_all_msgs(id()) ->
     {ok, [msg()]} | {error, term()}.
@@ -413,7 +431,9 @@ media_room_event(_RoomId, _Event) ->
     links :: nklib_links:links(),
     msg_pos = 1 :: integer(),
     msgs :: orddict:orddict(),
-    room :: room()
+    room :: room(),
+    started :: nklib_util:l_timestamp(),
+    timelog = [] :: [{integer(), map()}]
 }).
 
 
@@ -425,13 +445,19 @@ init([#{room_id:=RoomId, srv_id:=SrvId, backend:=Backend}=Room, BasePid]) ->
     true = nklib_proc:reg({?MODULE, RoomId}),
     nklib_proc:put(?MODULE, RoomId),
     {ok, BasePid} = nkmedia_room:register(RoomId, {nkcollab_room, BasePid, self()}),
+    Room1 = Room#{
+        members => #{}, 
+        sessions => #{},
+        start_time => nklib_util:timestamp()
+    },
     State1 = #state{
         id = RoomId, 
         srv_id = SrvId, 
         backend = Backend,
         links = nklib_links:new(),
         msgs = orddict:new(),
-        room = Room#{members=>#{}, sessions=>#{}}
+        room = Room1,
+        started = nklib_util:l_timestamp()
     },
     State2 = links_add(nkmedia_room, none, BasePid, State1),
     State3 = case Room of
@@ -440,6 +466,8 @@ init([#{room_id:=RoomId, srv_id:=SrvId, backend:=Backend}=Room, BasePid]) ->
         _ ->
             State2
     end,
+    set_log(State3),
+    nkservice_util:register_for_changes(SrvId),
     ?LLOG(notice, "started", [], State3),
     State4 = do_event(created, State3),
     {ok, State4}.
@@ -636,13 +664,16 @@ handle_cast({send_session_info, SessId, Data}, State) ->
             {noreply, State}
     end;
 
+handle_cast({timelog, Data}, State) ->
+    {noreply, timelog(Data, State)};
+
 handle_cast({register, Link}, State) ->
-    ?LLOG(info, "proc registered (~p)", [Link], State),
+    ?DEBUG("proc registered (~p)", [Link], State),
     State2 = links_add(Link, reg, State),
     {noreply, State2};
 
 handle_cast({unregister, Link}, State) ->
-    ?LLOG(info, "proc unregistered (~p)", [Link], State),
+    ?DEBUG("proc unregistered (~p)", [Link], State),
     {noreply, links_remove(Link, State)};
 
 handle_cast({set_status, Status}, #state{room=Room}=State) ->
@@ -652,7 +683,7 @@ handle_cast({set_status, Status}, #state{room=Room}=State) ->
     {noreply, do_event({status, Status}, State3)};
 
 handle_cast({stop, Reason}, State) ->
-    ?LLOG(info, "external stop: ~p", [Reason], State),
+    ?DEBUG("external stop: ~p", [Reason], State),
     do_stop(Reason, State);
 
 handle_cast(Msg, State) -> 
@@ -669,12 +700,12 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
         {ok, _, _, State2} when Stop /= false ->
             {noreply, State2};
         {ok, nkmedia_room, _, State2} ->
-            ?LLOG(warning, "media room down", [], State2),
+            ?LLOG(notice, "media room down", [], State2),
             do_stop(media_room_down, State2);
         {ok, _Link, {member, SessId}, State2} ->
             case do_find_session(SessId, State2) of
                 {ok, #{member_id:=MemberId}} ->
-                    ?LLOG(notice, "member ~p down: session ~s stopped", 
+                    ?DEBUG("member ~p down: session ~s stopped", 
                           [MemberId, SessId], State2),
                     State3 = remove_sessions([SessId], State2),
                     {noreply, State3};
@@ -684,7 +715,7 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
         {ok, _Link, {session, SessId}, State2} ->
             case do_find_session(SessId, State2) of
                 {ok, #{member_id:=MemberId}} ->
-                    ?LLOG(notice, "session ~s down (~p)", [SessId, MemberId], State2),
+                    ?DEBUG("session ~s down (~p)", [SessId, MemberId], State2),
                     State3 = remove_sessions([SessId], State2),
                     {noreply, State3};
                 error ->
@@ -695,6 +726,9 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
             case handle(nkcollab_room_reg_down, [Id, Link, Reason], State2) of
                 {ok, State3} ->
                     {noreply, State3};
+                {stop, normal, State3} ->
+                    ?DEBUG("stopping because of reg '~p' down",  [Link], State2),
+                    do_stop(reg_down, State3);
                 {stop, Reason2, State3} ->
                     ?LLOG(notice, "stopping because of reg '~p' down (~p)",
                           [Link, Reason2], State2),
@@ -706,6 +740,9 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}=Msg, State) ->
 
 handle_info(destroy, State) ->
     {stop, normal, State};
+
+handle_info({nkservice_updated, _SrvId}, State) ->
+    {noreply, set_log(State)};
 
 handle_info(Msg, #state{}=State) -> 
     handle(nkcollab_room_handle_info, [Msg], State).
@@ -722,7 +759,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, #state{stop_reason=Stop}=State) ->
+terminate(Reason, #state{stop_reason=Stop, timelog=Log}=State) ->
     case Stop of
         false ->
             Ref = nklib_util:uid(),
@@ -731,14 +768,25 @@ terminate(Reason, #state{stop_reason=Stop}=State) ->
         _ ->
             State2 = State
     end,
-    State3 = do_event(destroyed, State2),
-    {ok, _State4} = handle(nkcollab_room_terminate, [Reason], State3),
+    State3 = do_event({record, lists:reverse(Log)}, State2),
+    State4 = do_event(destroyed, State3),
+    {ok, _State5} = handle(nkcollab_room_terminate, [Reason], State4),
     ok.
 
 
 % ===================================================================
 %% Internal
 %% ===================================================================
+
+%% @private
+set_log(#state{srv_id=SrvId}=State) ->
+    Debug = case nkservice_util:get_debug_info(SrvId, ?MODULE) of
+        {true, _} -> true;
+        _ -> false
+    end,
+    put(nkcollab_room_debug, Debug),
+    State.
+
 
 %% @private
 find(Pid) when is_pid(Pid) ->
@@ -895,12 +943,12 @@ do_remove_session(SessId, Session, State) ->
 %% @private
 %% @private
 do_stop(Reason, #state{stop_reason=false, id=Id, room=Room}=State) ->
-    ?LLOG(notice, "stopped: ~p", [Reason], State),
+    ?LLOG(info, "stopped: ~p", [Reason], State),
     #{sessions:=Sessions} = Room,
     State2 = remove_sessions(maps:keys(Sessions), State),
     case nkmedia_room:stop(Id) of
         ok -> ok;
-        Other -> ?LLOG(warning, "error stopping base room: ~p", [Other], State)
+        Other -> ?LLOG(notice, "error stopping base room: ~p", [Other], State)
     end,
     % Give time for possible registrations to success and capture stop event
     timer:sleep(100),
@@ -916,7 +964,7 @@ do_stop(_Reason, State) ->
 
 %% @private
 do_event(Event, #state{id=Id}=State) ->
-    ?LLOG(info, "sending 'event': ~p", [Event], State),
+    ?DEBUG("sending 'event': ~p", [Event], State),
     State2 = do_event_regs(Event, State),
     State3 = do_event_members(Event, State2),
     {ok, State4} = handle(nkcollab_room_event, [Id, Event], State3),
@@ -1101,6 +1149,13 @@ do_update_session(SessId, Session, #state{room=#{sessions:=Sessions}=Room}=State
     State#state{room=?ROOM(#{sessions=>Sessions2}, Room)}.
 
 
+%% @private
+add_timelog(Msg, State) when is_atom(Msg); is_binary(Msg) ->
+    add_timelog(#{msg=>Msg}, State);
+
+add_timelog(#{msg:=_}=Data, #state{started=Started, timelog=Log}=State) ->
+    Time = (nklib_util:l_timestamp() - Started) div 1000,
+    State#state{timelog=[{Time, Data}|Log]}.
 
 
 %% @private
