@@ -95,8 +95,7 @@
 -include_lib("nkservice/include/nkservice.hrl").
 -include_lib("nksip/include/nksip.hrl").
 
--define(URL1, "nkapic://127.0.0.1:9010").
--define(URL2, "nkapic://media2.netcomposer.io:9010").
+-define(URL, "nkapi_c://127.0.0.1:9010").
 
 
 %% ===================================================================
@@ -119,7 +118,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:8060",
-        log_level => debug,
+        debug => [nkcollab_call],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -168,13 +167,7 @@ connect() ->
 connect(SrvId, User, Data) ->
     Fun = fun ?MODULE:api_client_fun/2,
     Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL1, Login, Fun, Data),
-    C.
-
-connect2(SrvId, User, Data) ->
-    Fun = fun ?MODULE:api_client_fun/2,
-    Login = #{user => nklib_util:to_binary(User), password=><<"p1">>},
-    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL2, Login, Fun, Data),
+    {ok, _, C} = nkservice_api_client:start(SrvId, ?URL, Login, Fun, Data),
     C.
 
 get_client() ->
@@ -450,13 +443,9 @@ start_call(Ws, Callee, Config) ->
 
 
 %% @private
-api_client_fun(#api_req{class=core, cmd=event, data=Data}, UserData) ->
+api_client_fun(#api_req{class=event, data=Event}, UserData) ->
     #{user:=User} = UserData,
-    Class = maps:get(<<"class">>, Data),
-    Sub = maps:get(<<"subclass">>, Data, <<>>),
-    Type = maps:get(<<"type">>, Data, <<>>),
-    ObjId = maps:get(<<"obj_id">>, Data, <<>>),
-    Body = maps:get(<<"body">>, Data, #{}),
+    #event{class=Class, subclass=Sub, type=Type, obj_id=ObjId, body=Body} = Event,
     lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
                  [User, Class, Sub, Type, ObjId, Body]),
     Sender = case Body of

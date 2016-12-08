@@ -108,14 +108,14 @@ call_down(SrvId, CallId) ->
 
 %% @private
 send_event(CallId, Type, Body, Call) ->
-	send_event(CallId, Type, Body, Call, all).
+	send_event(CallId, Type, Body, Call, undefined).
 
 
 %% @private
 send_event(CallId, Type, Body, #{srv_id:=SrvId}=Call, Link) ->
     Pid = case nklib_links:get_pid(Link) of
         LinkPid when is_pid(LinkPid) -> LinkPid;
-        _ -> all
+        _ -> undefined
     end,
     nkcollab_api_events:send_event(SrvId, call, CallId, Type, Body, Pid),
     {ok, Call}.
