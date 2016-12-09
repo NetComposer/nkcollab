@@ -70,7 +70,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        debug => [nkmedia_room, nkmedia_janus_op],
+        debug => [nkmedia_session],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -206,14 +206,11 @@ room_cmd(Pid, Cmd, Data) ->
 
 %% Events
 
-subscribe(WsPid, SessId, Type, Body) ->
+subscribe(SessId, Type, Body) ->
+    Pid = get_client(),
     Data = #{class=>media, subclass=>session, obj_id=>SessId, type=>Type, body=>Body},
-    nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
+    nkservice_api_client:cmd(Pid, core, event, subscribe, Data).
 
-
-subscribe_all(WsPid) ->
-    Data = #{class=>media},
-    nkservice_api_client:cmd(WsPid, core, event, subscribe, Data).
 
 
 
@@ -476,9 +473,13 @@ incoming_config(Backend, Type, Offer, Opts) ->
 
 
 start_session(WsPid, Config, Events) when is_pid(WsPid) ->
-    case nkservice_api_client:cmd(WsPid, media, session, create, Config) of
+    Config2 = Config#{
+        session_events => [created, answer, type, status, info, destroyed, record],
+        session_events_body => Events
+    },
+    case nkservice_api_client:cmd(WsPid, media, session, create, Config2) of
         {ok, #{<<"session_id">>:=SessId}} -> 
-            subscribe(WsPid, SessId, <<>>, Events),
+            % subscribe(WsPid, SessId, <<>>, Events),
             {ok, SessPid} = nkmedia_session:find(SessId),
             {ok, SessId, SessPid};
         {error, {_Code, Txt}} -> 
@@ -518,7 +519,6 @@ api_client_fun(#api_req{class=event, data=Event}, UserData) ->
     #{user:=User} = UserData,
     #event{class=Class, subclass=Sub, type=Type, obj_id=ObjId, body=Body} = Event,
     % lager:warning("CLIENT EVENT ~s:~s:~s:~s", [Class, Sub, Type, ObjId]),
-
     Sender = case Body of
         #{
             <<"verto_call_id">> := SCallId,
@@ -560,7 +560,7 @@ api_client_fun(#api_req{class=event, data=Event}, UserData) ->
     {ok, #{}, UserData};
 
 api_client_fun(_Req, UserData) ->
-    lager:error("TEST CLIENT req: ~p", [lager:pr(_Req, ?MODULE)]),
+    lager:notice("TEST CLIENT req: ~p", [lager:pr(_Req, ?MODULE)]),
     {error, not_implemented, UserData}.
 
 

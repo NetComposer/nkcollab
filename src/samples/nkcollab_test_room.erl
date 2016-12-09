@@ -82,7 +82,7 @@ start() ->
         kurento_proxy => "kms:all:8433",
         nksip_trace => {console, all},
         sip_listen => "sip:all:9012",
-        debug => [nkmedia_room, nkcollab_room],
+        debug => [nkcollab_room],
         api_gelf_server => "c2.netc.io"
     },
     Spec2 = nkmedia_util:add_certs(Spec1),
@@ -414,12 +414,12 @@ nkcollab_janus_terminate(_Reason, Janus) ->
 create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
     RoomConfig = #{
         class => sfu, 
-        room_id => test_room,
+        room_id => test,
         backend => nkmedia_janus
     },
     ok = create(RoomConfig),
     Opts2 = Opts#{
-        room_id => test_room,
+        room_id => test,
         type => type1,
         device => device1,
         meta => #{my_meta=>Meta}

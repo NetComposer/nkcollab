@@ -884,7 +884,7 @@ do_stop(Reason, #state{stop_reason=false}=State) ->
     % Give time for possible registrations to success and capture stop event
     timer:sleep(100),
     State3 = event({stopped, Reason}, State2),
-    erlang:send_after(5000, self(), destroy),
+    erlang:send_after(?SRV_DELAYED_DESTROY, self(), destroy),
     {noreply, State3#state{stop_reason=Reason}};
 
 do_stop(_Reason, State) ->

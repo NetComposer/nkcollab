@@ -52,6 +52,7 @@
                [State#state.id, State#state.backend | Args])).
 
 -include("nkcollab_room.hrl").
+-include_lib("nkservice/include/nkservice.hrl").
 
 
 
@@ -272,7 +273,6 @@ remove_session(Id, SessId) ->
 remove_member(Id, MemberId) ->
     do_call(Id, {remove_member, MemberId}).
 
-
 %% @doc 
 -spec remove_member_conn(id(), member_id(), conn_id()) ->
     ok | {error, term()}.
@@ -467,7 +467,7 @@ init([#{room_id:=RoomId, srv_id:=SrvId, backend:=Backend}=Room, BasePid]) ->
     end,
     set_log(State3),
     nkservice_util:register_for_changes(SrvId),
-    ?LLOG(notice, "started", [], State3),
+    ?LLOG(info, "started", [], State3),
     State4 = do_event(created, State3),
     {ok, State4}.
 
@@ -940,7 +940,7 @@ do_stop(Reason, #state{stop_reason=false, id=Id, room=Room}=State) ->
     timer:sleep(100),
     State4 = do_event({stopped, Reason}, State3),
     {ok, State5} = handle(nkcollab_room_stop, [Reason], State4),
-    erlang:send_after(5000, self(), destroy),
+    erlang:send_after(?SRV_DELAYED_DESTROY, self(), destroy),
     {noreply, State5#state{stop_reason=Reason}};
 
 do_stop(_Reason, State) ->
