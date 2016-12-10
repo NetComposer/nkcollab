@@ -22,7 +22,7 @@
 -module(nkcollab_room_api_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([syntax/4, get_room_info/1, get_member_info/1]).
+-export([syntax/4, get_info/1]).
 
 % -include_lib("nkservice/include/nkservice.hrl").
 
@@ -41,14 +41,17 @@ syntax(create, Syntax, Defaults, Mandatory) ->
             audio_codec => {enum, [opus, isac32, isac16, pcmu, pcma]},
             video_codec => {enum , [vp8, vp9, h264]},
             bitrate => {integer, 0, none},
-            meta => map
+            room_meta => map
         },
         Defaults,
         Mandatory
     };
 
-syntax(destroy, Syntax, Defaults, Mandatory) ->
-    {
+syntax(Cmd, Syntax, Defaults, Mandatory)
+        when Cmd==destroy; Cmd==get_info; Cmd==get_publishers; Cmd==get_listeners;
+             Cmd==get_user_sessions; Cmd==get_user_all_sessions;
+             Cmd==remove_user_sessions; Cmd==remove_user_all_sessions ->
+{
         Syntax#{room_id => binary},
         Defaults,
         [room_id|Mandatory]
@@ -59,13 +62,6 @@ syntax(get_list, Syntax, Defaults, Mandatory) ->
         Syntax,
         Defaults, 
         Mandatory
-    };
-
-syntax(get_info, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{room_id => binary},
-        Defaults, 
-        [room_id|Mandatory]
     };
 
 syntax(add_publish_session, Syntax, Defaults, Mandatory) ->
@@ -79,7 +75,7 @@ syntax(add_listen_session, Syntax, Defaults, Mandatory) ->
     {
         session_opts(Syntax#{publisher_id => binary}),
         Defaults, 
-        [room_id, publish_id|Mandatory]
+        [room_id, publisher_id|Mandatory]
     };
 
 syntax(remove_session, Syntax, Defaults, Mandatory) ->
@@ -92,52 +88,17 @@ syntax(remove_session, Syntax, Defaults, Mandatory) ->
         [room_id, session_id|Mandatory]
     };
 
-syntax(remove_member, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{room_id=>binary},
-        Defaults, 
-        [room_id|Mandatory]
-    };
-
-syntax(update_publisher, Syntax, Defaults, Mandatory) ->
-    {
-        session_opts(Syntax#{session_id=>binary}),
-        Defaults,
-        [room_id, session_id|Mandatory]
-    };
-
-syntax(update_meta, Syntax, Defaults, Mandatory) ->
+syntax(send_msg, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
-            session_id => binary
-        },
-        Defaults,
-        [room_id, session_id|Mandatory]
-    };
-
-syntax(update_media, Syntax, Defaults, Mandatory) ->
-    {
-        media_opts(Syntax#{
-            room_id => binary,
-            session_id => binary
-        }),
-        Defaults,
-        [room_id, session_id|Mandatory]
-    };
-
-syntax(send_broadcast, Syntax, Defaults, Mandatory) ->
-    {
-        Syntax#{
-            room_id => binary,
-            member_id => integer,
             msg => map
         },
         Defaults,
-        [room_id, member_id, msg|Mandatory]
+        [room_id, msg|Mandatory]
     };
 
-syntax(get_all_broadcasts, Syntax, Defaults, Mandatory) ->
+syntax(get_all_msgs, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary
@@ -147,15 +108,21 @@ syntax(get_all_broadcasts, Syntax, Defaults, Mandatory) ->
     };
 
 syntax(set_answer, Syntax, Defaults, Mandatory) ->
-    nkmedia_session_api_syntax:syntax(set_answer, Syntax, Defaults, Mandatory);
+    session_syntax(set_answer, Syntax, Defaults, Mandatory);
 
 syntax(set_candidate, Syntax, Defaults, Mandatory) ->
-    nkmedia_session_api_syntax:syntax(set_candidate, Syntax, Defaults, Mandatory);
+    session_syntax(set_candidate, Syntax, Defaults, Mandatory);
 
 syntax(set_candidate_end, Syntax, Defaults, Mandatory) ->
-    nkmedia_session_api_syntax:syntax(set_candidate_end, Syntax, Defaults, Mandatory);
+    session_syntax(set_candidate_end, Syntax, Defaults, Mandatory);
 
-syntax(timelog, Syntax, Defaults, Mandatory) ->
+syntax(update_media, Syntax, Defaults, Mandatory) ->
+    session_syntax(update_media, Syntax, Defaults, Mandatory);
+
+syntax(update_status, Syntax, Defaults, Mandatory) ->
+    session_syntax(update_status, Syntax, Defaults, Mandatory);
+
+syntax(add_timelog, Syntax, Defaults, Mandatory) ->
     {
         Syntax#{
             room_id => binary,
@@ -176,14 +143,30 @@ syntax(_Cmd, Syntax, Defaults, Mandatory) ->
 %% ===================================================================
 
 
-get_room_info(Room) ->
-    Keys = [audio_codec, video_codec, bitrate, class, backend, meta, status],
+get_info(Room) ->
+    Keys = [
+        room_id,
+        srv_id,
+        class, 
+        backend, 
+        audio_codec, 
+        video_codec, 
+        bitrate, 
+        room_meta, 
+        status,
+        conns,
+        publish,
+        listen,
+        dead,
+        start_time,
+        stop_time
+    ],
     maps:with(Keys, Room).
 
 
-get_member_info(Room) ->
-    Keys = [user_id, role, meta],
-    maps:with(Keys, Room).
+% get_member_info(Room) ->
+%     Keys = [user_id, role, meta],
+%     maps:with(Keys, Room).
 
 
 %% ===================================================================
@@ -195,7 +178,8 @@ session_opts(Syntax) ->
         room_id => binary,
         class => binary,
         device => binary,
-        meta => map,
+        room_events => {list, binary},
+        room_events_body => map,
 
         offer => nkmedia_session_api_syntax:offer(),
         no_offer_trickle_ice => boolean,
@@ -205,14 +189,23 @@ session_opts(Syntax) ->
         mute_audio => boolean,
         mute_video => boolean,
         mute_data => boolean,
-        bitrate => {integer, 0, none}
+        bitrate => {integer, 0, none},
+        session_meta => map,
+        session_events => {list, binary},
+        session_events_body => map
     }.
 
 
-media_opts(Data) ->
-    Data#{
-        mute_audio => boolean,
-        mute_video => boolean,
-        mute_data => boolean,
-        bitrate => {integer, 0, none}
-    }.
+session_syntax(Cmd, Syntax, Defaults, Mandatory) ->
+    Syntax2 = Syntax#{room_id=>binary},
+    nkmedia_session_api_syntax:syntax(Cmd, Syntax2, Defaults, Mandatory).
+
+
+
+% media_opts(Data) ->
+%     Data#{
+%         mute_audio => boolean,
+%         mute_video => boolean,
+%         mute_data => boolean,
+%         bitrate => {integer, 0, none}
+%     }.

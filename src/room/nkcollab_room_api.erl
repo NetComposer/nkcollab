@@ -57,7 +57,39 @@ cmd(get_list, _Req, State) ->
 cmd(get_info, #api_req{data=#{room_id:=RoomId}}, State) ->
     case nkcollab_room:get_room(RoomId) of
         {ok, Room} ->
-            {ok, nkcollab_room_api_syntax:get_room_info(Room), State};
+            {ok, nkcollab_room_api_syntax:get_info(Room), State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(get_publishers, #api_req{data=#{room_id:=RoomId}}, State) ->
+    case nkcollab_room:get_publishers(RoomId) of
+        {ok, Data} ->
+            {ok, Data, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(get_listeners, #api_req{data=#{room_id:=RoomId}}, State) ->
+    case nkcollab_room:get_listeners(RoomId) of
+        {ok, Data} ->
+            {ok, Data, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(get_user_sessions, #api_req{data=#{room_id:=RoomId}, session_id=ConnId}, State) ->
+    case nkcollab_room:get_user_sessions(RoomId, ConnId) of
+        {ok, _User, Data} ->
+            {ok, Data, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(get_user_all_sessions, #api_req{data=#{room_id:=RoomId}, user_id=UserId}, State) ->
+    case nkcollab_room:get_user_all_sessions(RoomId, UserId) of
+        {ok, Data} ->
+            {ok, Data, State};
         {error, Error} ->
             {error, Error, State}
     end;
@@ -72,12 +104,7 @@ cmd(add_publish_session, Req, State) ->
     case nkcollab_room:add_publish_session(RoomId, MemberId, ConnId, Data2) of
         {ok, SessId, Pid} ->
             nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
-            case session_reply(SessId, Data) of
-                {ok, Reply} ->
-                    {ok, Reply, State};
-                {error, Error} ->
-                    {error, Error, State}
-            end;
+            session_reply(SessId, Data, State);
         {error, Error} ->
             {error, Error, State}
     end;
@@ -92,7 +119,7 @@ cmd(add_listen_session, Req, State) ->
     case nkcollab_room:add_listen_session(RoomId, MemberId, ConnId, PubId, Data2) of
         {ok, SessId, Pid} ->
             nkservice_api_server:register(self(), {nkcollab_room, RoomId, Pid}),
-            session_reply(SessId, Data);
+            session_reply(SessId, Data, State);
         {error, Error} ->
             {error, Error, State}
     end;
@@ -100,44 +127,53 @@ cmd(add_listen_session, Req, State) ->
 cmd(remove_session, Req, State) ->
     #api_req{data=#{room_id:=RoomId, session_id:=SessId}} = Req,
     case nkcollab_room:remove_session(RoomId, SessId) of
-        {ok, Reply} ->
-            {ok, Reply, State};
+        ok ->
+            {ok, #{}, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(remove_member, Req, State) ->
-    #api_req{data=#{room_id:=RoomId}, user_id=MemberId} = Req,
-    case nkcollab_room:remove_member(RoomId, MemberId) of
-        {ok, Reply} ->
-            {ok, Reply, State};
+cmd(remove_user_sessions, Req, State) ->
+    #api_req{data=#{room_id:=RoomId}, session_id=ConnId} = Req,
+    case nkcollab_room:remove_user_sessions(RoomId, ConnId) of
+        ok ->
+            {ok, #{}, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-
-% In the future, this call and next ones should check if user has the session
-cmd(update_publisher, Req, State) ->
-    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
-    case nkcollab_room:update_publisher(RoomId, SessId, Data) of
-        {ok, Reply} ->
-            {ok, Reply, State};
+cmd(remove_user_all_sessions, Req, State) ->
+    #api_req{data=#{room_id:=RoomId}, user_id=UserId} = Req,
+    case nkcollab_room:remove_user_all_sessions(RoomId, UserId) of
+        ok ->
+            {ok, #{}, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(update_meta, Req, State) ->
-    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
-    case nkcollab_room:update_meta(RoomId, SessId, Data) of
-        {ok, Reply} ->
-            {ok, Reply, State};
+cmd(send_msg, ApiReq, State) ->
+    #api_req{data=Data, user_id=UserId} = ApiReq,
+    #{room_id:=RoomId, msg:=Msg} = Data,
+    case nkcollab_room:send_msg(RoomId, UserId, Msg) of
+        {ok, MsgId} ->
+            {ok, #{msg_id=>MsgId}, State};
         {error, Error} ->
             {error, Error, State}
     end;
 
-cmd(update_media, Req, State) ->
-    #api_req{data=#{room_id:=RoomId, session_id:=SessId} = Data} = Req,
-    case nkcollab_room:update_media(RoomId, SessId, Data) of
+cmd(get_all_msgs, #api_req{data=Data}, State) ->
+    #{room_id:=RoomId} = Data,
+    case nkcollab_room:get_all_msgs(RoomId) of
+        {ok, List} ->
+            {ok, List, State};
+        {error, Error} ->
+            {error, Error, State}
+    end;
+
+cmd(add_timelog, #api_req{data=Data}, State) ->
+    #{room_id:=RoomId, msg:=Msg} = Data,
+    Body = maps:get(body, Data, #{}),
+    case nkcollab_room:add_timelog(RoomId, Body#{msg=>Msg}) of
         ok ->
             {ok, #{}, State};
         {error, Error} ->
@@ -153,35 +189,11 @@ cmd(set_candidate, Req, State) ->
 cmd(set_candidate_end, Req, State) ->
     nkmedia_session_api:cmd(set_candidate_end, Req, State);
 
-cmd(send_broadcast, ApiReq, State) ->
-    #api_req{data=Data, user_id=User} = ApiReq,
-    #{room_id:=RoomId, member_id:=MemberId, msg:=Msg} = Data,
-    RoomMsg = Msg#{user_id=>User},
-    case nkcollab_room:broadcast(RoomId, MemberId, RoomMsg) of
-        {ok, MsgId} ->
-            {ok, #{msg_id=>MsgId}, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
+cmd(update_media, Req, State) ->
+    nkmedia_session_api:cmd(update_media, Req, State);
 
-cmd(get_all_broadcasts, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId} = Data,
-    case nkcollab_room:get_all_msgs(RoomId) of
-        {ok, List} ->
-            {ok, List, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
-
-cmd(timelog, #api_req{data=Data}, State) ->
-    #{room_id:=RoomId, msg:=Msg} = Data,
-    Body = maps:get(body, Data, #{}),
-    case nkcollab_room:timelog(RoomId, Body#{msg=>Msg}) of
-        ok ->
-            {ok, #{}, State};
-        {error, Error} ->
-            {error, Error, State}
-    end;
+cmd(update_status, Req, State) ->
+    nkmedia_session_api:cmd(update_status, Req, State);
 
 cmd(_Cmd, _Data, _State) ->
     continue.
@@ -195,21 +207,17 @@ cmd(_Cmd, _Data, _State) ->
 %% @private Sent by the room when it is stopping
 %% We sent a message to the API session to remove the reg before 
 %% it receives the DOWN.
-api_room_stopped(RoomId, ApiPid, _Reason, Room) ->
-    #{srv_id:=SrvId} = Room,
-    Event = get_room_event(SrvId, RoomId),
-    nkservice_api_server:unsubscribe(ApiPid, Event, none),
+api_room_stopped(RoomId, ApiPid, _Reason, _Room) ->
     nkservice_api_server:unregister(ApiPid, {nkcollab_room, RoomId, self()}),
-    {ok, Room}.
+    unsubscribe(RoomId, ApiPid).
 
 
 %% @private The API server detected room has fallen
 api_room_down(RoomId, Reason, State) ->
     #{srv_id:=SrvId} = State,
     lager:warning("API Server: Collab Room ~s is down: ~p", [RoomId, Reason]),
-    Event = get_room_event(SrvId, RoomId),
-    nkservice_api_server:unsubscribe(self(), Event, all),
-    nkcollab_room_api_events:room_down(SrvId, RoomId).
+    nkcollab_room_api_events:event_room_down(SrvId, RoomId),
+    unsubscribe(RoomId, self()).
 
 
 
@@ -217,34 +225,33 @@ api_room_down(RoomId, Reason, State) ->
 %% Internal
 %% ===================================================================
 
+unsubscribe(RoomId, ConnId) ->
+    Fun = fun(#event{class=Class, subclass=Sub, obj_id=ObjId}) ->
+        to_bin(Class) == <<"nkcollab">> andalso
+        to_bin(Sub) == <<"room">> andalso
+        ObjId == RoomId 
+    end,
+    nkservice_api_server:unsubscribe_fun(ConnId, Fun).
+
+
 %% @private
-session_reply(SessId, Config) ->
+session_reply(SessId, Config, State) ->
     case Config of
         #{offer:=_} -> 
             case nkmedia_session:get_answer(SessId) of
                 {ok, Answer} ->
-                    {ok, #{session_id=>SessId, answer=>Answer}};
+                    {ok, #{session_id=>SessId, answer=>Answer}, State};
                 {error, Error} ->
-                    {error, Error}
+                    {error, Error, State}
             end;
         _ -> 
             case nkmedia_session:get_offer(SessId) of
                 {ok, Offer} ->
-                    {ok, #{session_id=>SessId, offer=>Offer}};
+                    {ok, #{session_id=>SessId, offer=>Offer}, State};
                 {error, Error} ->
-                    {error, Error}
+                    {error, Error, State}
             end
     end.
 
-
-%% @private
-get_room_event(SrvId, RoomId)->
-    #event{
-        srv_id = SrvId, 
-        class = <<"collab">>, 
-        subclass = <<"room">>,
-        obj_id = RoomId
-    }.
-
-
+to_bin(Term) -> nklib_util:to_binary(Term).
 

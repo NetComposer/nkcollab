@@ -144,40 +144,52 @@ list() ->
     cmd(get_list, #{}).
 
 create(Data) ->
-    case cmd(create, Data) of
+    case cmd(create, Data#{room_meta => #{?MODULE=>room_meta}}) of
         {ok, _} -> timer:sleep(200);
         {error, {304002, _}} -> ok
     end.
 
-destroy(Id) ->
-    cmd(destroy, #{room_id=>Id}).
+destroy() ->
+    cmd(destroy, #{room_id=>test}).
 
-info(Id) ->
-    cmd(get_info, #{room_id=>Id}).
+get_info() ->
+    cmd(get_info, #{room_id=>test}).
 
-presenters(Id) ->
-    cmd(get_presenters, #{room_id=>Id}).
+get_publishers() ->
+    cmd(get_publishers, #{room_id=>test}).
 
-viewers(Id) ->
-    cmd(get_viewers, #{room_id=>Id}).
+get_listeners() ->
+    cmd(get_listeners, #{room_id=>test}).
 
-destroy_member(Room, Member) ->
-    cmd(destroy_member, #{room_id=>Room, member_id=>Member}).
+get_sessions() ->
+    cmd(get_user_sessions, #{room_id=>test}).
 
-broadcast(Room, MemberId, Msg) ->
-    cmd(send_broadcast, #{room_id=>Room, member_id=>MemberId, msg=>Msg}).
+get_all_sessions() ->
+    cmd(get_user_all_sessions, #{room_id=>test}).
 
-get_msgs(RoomId) ->
-    cmd(get_all_broadcasts, #{room_id=>RoomId}).
+remove(SessId) ->
+    cmd(remove_session, #{room_id=>test, session_id=>SessId}).
 
-update_meta(RoomId, MemberId, Meta) ->
-    cmd(update_meta, #{room_id=>RoomId, member_id=>MemberId, meta=>Meta}).
+remove_user_sessions() ->
+    cmd(remove_user_sessions, #{room_id=>test}).
 
-update_media(RoomId, MemberId, Media) ->
-    cmd(update_media, Media#{room_id=>RoomId, member_id=>MemberId}).
+remove_user_all_sessions() ->
+    cmd(remove_user_all_sessions, #{room_id=>test}).
 
-update_all_media(RoomId, Media) ->
-    cmd(update_all_media, Media#{room_id=>RoomId}).
+send_msg(Msg) ->
+    cmd(send_msg, #{room_id=>test, msg=>Msg}).
+
+get_msgs() ->
+    cmd(get_all_msgs, #{room_id=>test}).
+
+update_media(SessId, Media) ->
+    cmd(update_media, Media#{room_id=>test, session_id=>SessId}).
+
+update_status(SessId, Media) ->
+    cmd(update_status, Media#{room_id=>test, session_id=>SessId}).
+
+timelog(Msg, Body) ->
+    cmd(add_timelog, #{room_id=>test, msg=>Msg, body=>Body}).
 
 cmd(Cmd, Data) ->
     Pid = get_client(),
@@ -188,27 +200,27 @@ cmd(Pid, Cmd, Data) ->
 
 
 %% Invite
-start_viewer(Dest, RoomId, PresenterId) ->
+start_viewer(Dest, Presenter) ->
     case nkservice_api_client:get_user_pids(Dest) of
         [Pid|_] ->
-            start_viewer(Dest, RoomId, PresenterId, Pid, #{});
+            start_viewer(Dest, Presenter, Pid, #{});
         [] ->
             {error, not_found}
     end.
 
 
-add_listener(Dest, RoomId, MemberId, PresenterId) ->
-    case nkservice_api_client:get_user_pids(Dest) of
-        [Pid|_] ->
-            add_listener(Dest, RoomId, MemberId, PresenterId, Pid, #{});
-        [] ->
-            {error, not_found}
-    end.
+% add_listener(Dest, RoomId, MemberId, PresenterId) ->
+%     case nkservice_api_client:get_user_pids(Dest) of
+%         [Pid|_] ->
+%             add_listener(Dest, RoomId, MemberId, PresenterId, Pid, #{});
+%         [] ->
+%             {error, not_found}
+%     end.
 
-remove_listener(RoomId, MemberId, PresenterId) ->
-    Pid = get_client(),
-    Body = #{room_id=>RoomId, member_id=>MemberId, presenter_id=>PresenterId},
-    cmd(Pid, remove_listener, Body).
+% remove_listener(RoomId, MemberId, PresenterId) ->
+%     Pid = get_client(),
+%     Body = #{room_id=>RoomId, member_id=>MemberId, presenter_id=>PresenterId},
+%     cmd(Pid, remove_listener, Body).
 
 
 %% Internal
@@ -296,7 +308,7 @@ nkcollab_verto_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Verto) ->
         verto_call_id => CallId,
         verto_pid => pid2bin(self())
     },
-    case create_presenter(Dest, Ws, Opts, Events) of
+    case create_publisher(Dest, Ws, Opts, Events) of
         {ok, SessId, Answer} ->
             % We register Verto at the session, so that when the session stops,
             % it will be detected (in nkcollab_verto_callbacks)
@@ -356,7 +368,7 @@ nkcollab_janus_invite(_SrvId, CallId, Offer, #{test_api_server:=Ws}=Janus) ->
         janus_call_id => CallId,
         janus_pid => pid2bin(self())
     },
-    case create_presenter(Dest, Ws, Opts, Events) of
+    case create_publisher(Dest, Ws, Opts, Events) of
         {ok, SessId, Answer} ->
             % We register Janus at the session, so that when the session stops,
             % it will be detected (in nkcollab_janus_callbacks)
@@ -411,7 +423,7 @@ nkcollab_janus_terminate(_Reason, Janus) ->
 %% ===================================================================
 
 %% @private
-create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
+create_publisher(<<"p", Meta/binary>>, WsPid, Opts, Events) ->
     RoomConfig = #{
         class => sfu, 
         room_id => test,
@@ -420,9 +432,13 @@ create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
     ok = create(RoomConfig),
     Opts2 = Opts#{
         room_id => test,
-        type => type1,
+        class => type1,
         device => device1,
-        meta => #{my_meta=>Meta}
+        session_meta => #{?MODULE=>#{session_meta=>Meta}},
+        session_events => [answer, destroyed, status],
+        session_events_body => Events,
+        room_events => [started_publisher, updated_publisher, destroyed],
+        room_events_body => #{?MODULE=>body}
     },
     case cmd(WsPid, add_publish_session, Opts2) of
         {ok, 
@@ -436,7 +452,7 @@ create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
             {error, Error}
     end;
 
-% create_presenter(<<"u", RoomId/binary>>, WsPid, Opts) ->
+% create_publisher(<<"u", RoomId/binary>>, WsPid, Opts) ->
 %     Opts2 = Opts#{
 %         room_id => RoomId,
 %         member_id => 1
@@ -453,60 +469,50 @@ create_presenter(<<"p", Meta/binary>>, WsPid, Opts, _Events) ->
 %             {error, Error}
 %     end;
 
-create_presenter(_Dest, _WsPid, _Opts, _Events) ->
+create_publisher(_Dest, _WsPid, _Opts, _Events) ->
     {error, unknown_destination}.
 
 
 %% @private
-start_viewer(Num, RoomId, Presenter, WsPid, Opts) ->
+start_viewer(Num, Presenter, WsPid, Opts) ->
     case nkcollab_test:find_user(Num) of
         not_found ->
             {error, unknown_user};
         Dest ->
-            Opts2 = Opts#{
-                room_id => RoomId,
-                meta => #{module=>nkcollab_test_room, type=>viewer},
-                presenter_id => Presenter
-            },
-            case cmd(WsPid, create_viewer, Opts2) of
-                {ok, 
-                    #{
-                        <<"member_id">> := _MemberId, 
-                        <<"session_id">> := SessId, 
-                        <<"offer">> := Offer
-                    }
-                } ->
-                    start_invite(Dest, SessId, Offer);
+            case find_publisher(Presenter) of
+                {ok, PublisherId} ->
+                    create_listener(Dest, WsPid, PublisherId, Opts);
                 {error, Error} ->
                     {error, Error}
             end
     end.
+
 
 
 %% @private
-add_listener(Num, RoomId, Member, Presenter, WsPid, Opts) ->
-    case nkcollab_test:find_user(Num) of
-        not_found ->
-            {error, unknown_user};
-        Dest ->
-            Opts2 = Opts#{
-                room_id => RoomId,
-                member_id => Member,
-                presenter_id => Presenter
-            },
-            case cmd(WsPid, add_listener, Opts2) of
-                {ok, 
-                    #{
-                        <<"session_id">> := SessId, 
-                        <<"offer">> := Offer
-                    }
-                } ->
-                    start_invite(Dest, SessId, Offer);
-                {error, Error} ->
-                    {error, Error}
-            end
+create_listener(Dest, Pid, PublisherId, Opts) ->
+    Opts2 = Opts#{
+        room_id => test,
+        class => class2,
+        type => type2,
+        session_meta => #{?MODULE=>listener},
+        session_events => [answer, destroyed, status],
+        % session_events_body => Events,
+        room_events => [started_publisher, updated_publisher, destroyed],
+        room_events_body => #{?MODULE=>body},
+        publisher_id => PublisherId
+    },
+    case cmd(Pid, add_listen_session, Opts2) of
+        {ok, 
+            #{
+                <<"session_id">> := SessId, 
+                <<"offer">> := Offer
+            }
+        } ->
+            start_invite(Dest, SessId, Offer);
+        {error, Error} ->
+            {error, Error}
     end.
-
 
 
 start_invite(Dest, SessId, Offer) ->
@@ -531,14 +537,26 @@ start_invite2({nkcollab_janus, JanusPid}, SessId, Offer, SessLink) ->
 
 
 
+find_publisher(Presenter) ->
+    Presenter2 = nklib_util:to_binary(Presenter),
+    {ok, All} = get_publishers(),
+    List = [
+        SessId || 
+        #{<<"session_id">>:=SessId, <<"user_id">>:=User} <- All, User==Presenter2
+    ],
+    case List of
+        [First|_] -> {ok, First};
+        [] -> {error, not_found}
+    end.
+
+
+
+
+
 %% @private
-api_client_fun(#api_req{class=core, cmd=event, data = Data}, UserData) ->
+api_client_fun(#api_req{class=event, data=Event}, UserData) ->
     #{user:=User} = UserData,
-    Class = maps:get(<<"class">>, Data),
-    Sub = maps:get(<<"subclass">>, Data, <<>>),
-    Type = maps:get(<<"type">>, Data, <<>>),
-    ObjId = maps:get(<<"obj_id">>, Data, <<>>),
-    Body = maps:get(<<"body">>, Data, #{}),
+    #event{class=Class, subclass=Sub, type=Type, obj_id=ObjId, body=Body}=Event,
     lager:notice("CLIENT ~s event ~s:~s:~s:~s: ~p", 
                  [User, Class, Sub, Type, ObjId, Body]),
     {ok, #{}, UserData};

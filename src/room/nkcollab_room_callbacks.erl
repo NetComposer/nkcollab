@@ -24,7 +24,7 @@
 
 -export([plugin_deps/0]).
 -export([nkcollab_room_init/2, nkcollab_room_stop/2, nkcollab_room_terminate/2, 
-         nkcollab_room_event/3, nkcollab_room_reg_event/4, nkcollab_room_member_event/5,
+         nkcollab_room_event/3, nkcollab_room_reg_event/4, 
          nkcollab_room_reg_down/4,
          nkcollab_room_handle_call/3, nkcollab_room_handle_cast/2, 
          nkcollab_room_handle_info/2]).
@@ -106,7 +106,8 @@ nkcollab_room_terminate(_Reason, Room) ->
     {ok, room()} | continue().
 
 nkcollab_room_event(RoomId, Event, Room) ->
-    nkcollab_room_api_events:event(RoomId, Event, Room).
+    nkcollab_room_api_events:event(RoomId, Event, Room),
+    {ok, Room}.
 
 
 %% @doc Called when the status of the room changes, for each registered
@@ -114,25 +115,11 @@ nkcollab_room_event(RoomId, Event, Room) ->
 -spec nkcollab_room_reg_event(room_id(), nklib:link(), nkcollab_room:event(), room()) ->
     {ok, room()} | continue().
 
+nkcollab_room_reg_event(RoomId, {nkcollab_api, Pid}, {stopped, Reason}, Room) ->
+    nkcollab_room_api:api_room_stopped(RoomId, Pid, Reason, Room),
+    {ok, Room};
+
 nkcollab_room_reg_event(_RoomId, _Link, _Event, Room) ->
-    {ok, Room}.
-
-
-%% @doc Called when the status of the room changes, for each registered
-%% member
--spec nkcollab_room_member_event(room_id(), nklib:link(), nkcollab_room:member_id(), 
-                                 nkcollab_room:event(), room()) ->
-    {ok, room()} | continue().
-
-nkcollab_room_member_event(RoomId, {nkcollab_api, Pid}, MemberId, 
-                           {stopped_member, MemberId, _Info}, Room) ->
-    nkcollab_room_api:member_stopped(RoomId, MemberId, Pid, Room);
-
-nkcollab_room_member_event(RoomId, {nkcollab_api, Pid}, _MemberId, 
-                           {destroyed, _Reason}, Room) ->
-    nkcollab_room_api:room_stopped(RoomId, Pid, Room);
-
-nkcollab_room_member_event(_RoomId, _Link, _MemberId, _Event, Room) ->
     {ok, Room}.
 
 

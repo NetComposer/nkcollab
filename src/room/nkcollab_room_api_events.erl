@@ -22,9 +22,9 @@
 -module(nkcollab_room_api_events).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([event/3, room_down/2]).
+-export([event/3, event_room_down/2]).
 
-% -include_lib("nkservice/include/nkservice.hrl").
+-include_lib("nkservice/include/nkservice.hrl").
 
 
 %% ===================================================================
@@ -37,66 +37,51 @@
     {ok, nkcollab_room:room()}.
 
 event(RoomId, created, Room) ->
-    Data = nkcollab_room_api_syntax:get_room_info(Room),
+    Data = nkcollab_room_api_syntax:get_info(Room),
     send_event(RoomId, created, Data, Room);
 
-event(RoomId, {broadcast, Msg}, Room) ->
-    send_event(RoomId, broadcast, Msg, Room);
+event(RoomId, {room_msg, Msg}, Room) ->
+    send_event(RoomId, room_msg, Msg, Room);
 
 event(RoomId, {room_info, Meta}, Room) ->
     send_event(RoomId, room_info, Meta, Room);
 
-event(RoomId, {member_info, MemberId, Meta}, Room) ->
-    send_event(RoomId, member_info, Meta#{member_id=>MemberId}, Room);
+event(RoomId, {started_publisher, Data}, Room) ->
+    send_event(RoomId, started_publisher, Data, Room);
 
-event(RoomId, {session_info, MemberId, SessId, Meta}, Room) ->
-    Meta2 = Meta#{member_id=>MemberId, session_id=>SessId},
-    send_event(RoomId, session_info, Meta2, Room);
+event(RoomId, {stopped_publisher, Data}, Room) ->
+    send_event(RoomId, stopped_publisher, Data, Room);
 
-event(RoomId, {status, Status}, Room) ->
-    send_event(RoomId, status, Status, Room);
+event(RoomId, {updated_publisher, Data}, Room) ->
+    send_event(RoomId, updated_publisher, Data, Room);
 
-% event(RoomId, {started_member, MemberId, Info}, Room) ->
-%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-%     send_event(RoomId, started_member, Info2#{member_id=>MemberId}, Room);
+event(RoomId, {started_listener, Data}, Room) ->
+    send_event(RoomId, started_listener, Data, Room);
 
-% event(RoomId, {stopped_member, MemberId, Info}, Room) ->
-%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-%     send_event(RoomId, stopped_member, Info2#{member_id=>MemberId}, Room);
-
-% event(RoomId, {started_session, SessId, MemberId}, Room) ->
-%     Data = #{member_id=>MemberId, session_id=>SessId},
-%     send_event(RoomId, started_session, Data, Room);
-
-% event(RoomId, {stopped_session, SessId, MemberId}, Room) ->
-%     Data = #{member_id=>MemberId, session_id=>SessId},
-%     send_event(RoomId, stopped_session, Data, Room);
-
-% event(RoomId, {updated_member, MemberId, Info}, Room) ->
-%     Info2 = nkcollab_room_api_syntax:get_member_info(Info),
-%     send_event(RoomId, updated_member, Info2#{member_id=>MemberId}, Room);
-
-% event(RoomId, {updated_media, MemberId, Media}, Room) ->
-%     send_event(RoomId, updated_media, #{member_id=>MemberId, media=>Media}, Room);
+event(RoomId, {stopped_listener, Data}, Room) ->
+    send_event(RoomId, stopped_listener, Data, Room);
 
 %% 'destroyed' event is only for internal use
 event(RoomId, {stopped, Reason}, #{srv_id:=SrvId}=Room) ->
     {Code, Txt} = nkservice_util:error_code(SrvId, Reason),
     send_event(RoomId, destroyed, #{code=>Code, reason=>Txt}, Room);
 
+event(RoomId, {record, Log}, Room) ->
+    Record = #{info=>nkcollab_room_api_syntax:get_info(Room), timelog=>Log},
+    send_event(RoomId, record, Record, Room);
 
 event(_RoomId, _Event, Room) ->
     {ok, Room}.
 
 
 %% @private
--spec room_down(nkservice:id(), nkmedia_session:id()) ->
+-spec event_room_down(nkservice:id(), nkmedia_session:id()) ->
     ok.
 
-room_down(SrvId, RoomId) ->
+event_room_down(SrvId, RoomId) ->
     {Code, Txt} = nkservice_util:error_code(SrvId, process_down),
     Body = #{code=>Code, reason=>Txt},
-    nkcollab_api_events:send_event(SrvId, room, RoomId, destroyed, Body).
+    send_event(RoomId, destroyed, Body, #{srv_id=>SrvId, conns=>#{}}).
 
 
 
@@ -105,8 +90,48 @@ room_down(SrvId, RoomId) ->
 %% ===================================================================
 
 %% @private
-send_event(RoomId, Type, Body, #{srv_id:=SrvId}=Room) ->
-    nkcollab_api_events:send_event(SrvId, room, RoomId, Type, Body),
-    {ok, Room}.
+send_event(RoomId, Type, Body, #{srv_id:=SrvId, conns:=Conns}=Room) ->
+    Event = #event{
+        srv_id = SrvId,     
+        class = <<"collab">>, 
+        subclass = <<"room">>,
+        type = nklib_util:to_binary(Type),
+        obj_id = RoomId,
+        body = Body
+    },
+    send_direct_events(maps:to_list(Conns), Event, Room),
+    nkservice_events:send(Event),
+    ok.
+
+
+
+%% @private
+send_direct_events([], _Event, _Room) ->
+    ok;
+
+send_direct_events([{ConnId, ConnData}|Rest], Event, Room) ->
+    #{room_events:=Events} = ConnData,
+    #event{type=Type, body=Body} = Event,
+    case lists:member(Type, Events) of
+        true ->
+            Event2 = case ConnData of
+                #{room_events_body:=Body2} ->
+                    Event#event{body=maps:merge(Body, Body2)};
+                _ ->
+                    Event
+            end,
+            nkservice_api_server:event(ConnId, Event2);
+        false ->
+            ok
+    end,
+    send_direct_events(Rest, Event, Room).
+
+
+
+
+
+
+
+
 
 
