@@ -48,8 +48,12 @@
     end).
 
 -define(LLOG(Type, Txt, Args, State),
-    lager:Type("NkCOLLAB Room '~s' "++Txt, 
-               [State#state.id | Args])).
+    lager:Type(
+        [
+            {room_id, State#state.id}
+        ],
+        "NkCOLLAB Room '~s' "++Txt, 
+       [State#state.id | Args])).
 
 -include("nkcollab_room.hrl").
 -include_lib("nkservice/include/nkservice.hrl").
