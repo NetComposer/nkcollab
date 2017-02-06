@@ -50,7 +50,7 @@
 
 
 plugin_deps() ->
-    [nkmedia, nkmedia_fs, nkmedia_kms, nkmedia_janus].
+    [nkmedia, nkmedia_janus].
 
 
 %% ===================================================================
