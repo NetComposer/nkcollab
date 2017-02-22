@@ -2,3 +2,4 @@ log
 ebin
 deps
 .DS_Store
+/.rebar3
